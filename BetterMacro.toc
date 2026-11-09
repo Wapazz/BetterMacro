@@ -1,0 +1,32 @@
+## Interface: 16001
+## Title: BetterMacro
+## Notes: Build macros with blocks and read what they do in plain language.
+## Notes-frFR: Construis tes macros avec des blocs et lis ce qu'elles font en clair.
+## Author: Wapaz
+## Version: 0.1.0
+## X-License: MIT
+## SavedVariables: BetterMacroDB
+## IconTexture: Interface\AddOns\BetterMacro\Media\BetterMacro
+
+Locales\enUS.lua
+Locales\frFR.lua
+
+Core\Util.lua
+Core\Generator.lua
+Core\Explainer.lua
+Core\Parser.lua
+Core\Evaluator.lua
+Core\Data.lua
+Core\Templates.lua
+Core\Storage.lua
+Core\History.lua
+Core\Share.lua
+
+UI\Widgets.lua
+UI\Picker.lua
+UI\Builder.lua
+UI\ShareFrame.lua
+UI\MainFrame.lua
+UI\Minimap.lua
+
+Main.lua
