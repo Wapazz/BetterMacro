@@ -217,12 +217,29 @@ local function drawCast(ctx, card, line, li, W_, live)
         local u = flat(card, L["UNITSHORT_" .. (b.unit or "target")], "plain", 80, y, 90)
         u:SetScript("OnClick", function(self) if not ns.locked then unitMenu(ctx, self, b) end end)
         local slotX = 80 + u:GetWidth() + 6
-        local slotW = W_ - slotX - (#line.branches > 1 and 30 or 10)
+        local n = #line.branches
+        local slotW = W_ - slotX - (n > 1 and 70 or 10)
         actionSlot(ctx, card, b.action, slotX, y, slotW, line.cmd == "use" and "item" or "spell", setAction(ctx, b))
-        if #line.branches > 1 then
+        if n > 1 then
+            -- Reorder branches: the order is the order the game tries them in
+            local br = line.branches
+            if j > 1 then
+                iconBtn(card, "Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Up", W_ - 64, y, L.MOVE_UP, function()
+                    if ns.locked then return end
+                    br[j], br[j - 1] = br[j - 1], br[j]
+                    ctx.changed()
+                end)
+            end
+            if j < n then
+                iconBtn(card, "Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up", W_ - 44, y, L.MOVE_DOWN, function()
+                    if ns.locked then return end
+                    br[j], br[j + 1] = br[j + 1], br[j]
+                    ctx.changed()
+                end)
+            end
             iconBtn(card, "Interface\\Buttons\\UI-GroupLoot-Pass-Up", W_ - 24, y, L.REMOVE, function()
                 if ns.locked then return end
-                table.remove(line.branches, j)
+                table.remove(br, j)
                 ctx.changed()
             end)
         end
