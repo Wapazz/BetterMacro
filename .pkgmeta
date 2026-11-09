@@ -1,0 +1,10 @@
+package-as: BetterMacro
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - README.md
+  - CHANGELOG.md
+  - Media/BetterMacro-512.png
