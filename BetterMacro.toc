@@ -3,7 +3,7 @@
 ## Notes: Build macros with blocks and read what they do in plain language.
 ## Notes-frFR: Construis tes macros avec des blocs et lis ce qu'elles font en clair.
 ## Author: Wapaz
-## Version: 0.1.0
+## Version: 1.0.1
 ## X-License: MIT
 ## SavedVariables: BetterMacroDB
 ## IconTexture: Interface\AddOns\BetterMacro\Media\BetterMacro
