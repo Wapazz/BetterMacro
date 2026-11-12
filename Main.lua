@@ -39,6 +39,7 @@ local function loadMacroUI()
 end
 
 local ev = CreateFrame("Frame")
+local loggedIn = false
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("UPDATE_MACROS")
@@ -52,9 +53,12 @@ ev:SetScript("OnEvent", function(_, event, arg1)
             hookMacroFrame()
         end
     elseif event == "PLAYER_LOGIN" then
+        loggedIn = true
         ns.Minimap.Create()
         loadMacroUI()
+        ns.Storage.SnapshotCharacter()
     elseif event == "UPDATE_MACROS" then
+        if loggedIn then ns.Storage.SnapshotCharacter() end
         if ns.MainFrame.IsShown() then ns.MainFrame.RefreshList() end
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.MainFrame.SetLocked(true)

@@ -17,9 +17,9 @@ state.hist = H.New()
 state.lineage = 0
 state.idents = {}
 
-local function newLineage(name, perChar)
+local function newLineage(identity)
     state.lineage = state.lineage + 1
-    state.idents[state.lineage] = name and { name = name, perChar = perChar and true or false } or nil
+    state.idents[state.lineage] = identity
 end
 
 local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
@@ -30,7 +30,7 @@ local ui = {}
 
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local MAX_LEN = 255
-local FRAME_W, LEFT_W = 990, 228
+local FRAME_W, LEFT_W = 1050, 228
 local CENTER_X, CENTER_W = LEFT_W + 20, 500
 local CONTENT_W = CENTER_W - 26
 
@@ -52,6 +52,8 @@ end
 
 function MF.RefreshList()
     if not f then return end
+    local identity = state.idents[state.lineage]
+    if identity then state.index = S.ResolveIdentity(identity) end
     local general, character = scopeList()
     local maxA, maxC = S.Limits()
     ui.tabG:SetLabel(("%s %d/%d"):format(L.GENERAL, #general, maxA), false)
@@ -61,7 +63,9 @@ function MF.RefreshList()
     ui.tabC:ClearAllPoints()
     ui.tabC:SetPoint("LEFT", ui.tabG, "RIGHT", 4, 0)
 
-    local list = (state.scope == "character") and character or general
+    local list = state.otherCharacter and S.CharacterMacros(state.otherCharacter)
+        or ((state.scope == "character") and character or general)
+    ui.otherLabel:SetText(state.otherCharacter or L.OTHER_CHARACTERS)
     local content = ui.listScroll.content
     for _, r in ipairs(ui.listRows) do r:Hide() end
     for i, m in ipairs(list) do
@@ -72,11 +76,21 @@ function MF.RefreshList()
         end
         r:SetPoint("TOPLEFT", 0, -(i - 1) * 22)
         r:SetSize(content:GetWidth(), 20)
-        r:SetStyle(m.index == state.index and "accent" or "ghost")
+        r:SetStyle(not state.otherCharacter and m.index == state.index and "accent" or "ghost")
         r.icon:SetTexture(m.icon or QUESTION_TEX)
         r.label:SetText(m.name)
         r.label:SetTextColor(1, 1, 1)
-        r:SetScript("OnClick", function() MF.Select(m.index) end)
+        r:SetScript("OnClick", function()
+            if state.otherCharacter then
+                if ns.locked then return end
+                local copy = U.copy(m)
+                state.scope, state.otherCharacter = "character", nil
+                MF.New(copy)
+                MF.Status(L.OTHER_COPY_HINT, 0.6, 0.8, 1)
+            else
+                MF.Select(m.index)
+            end
+        end)
         r:Show()
     end
     content:SetHeight(math.max(10, #list * 22))
@@ -232,6 +246,7 @@ function MF.Refresh()
     if not ui.name:HasFocus() then ui.name:SetText(m.name or "") end
     ui.tooltipCheck:SetChecked(m.showtooltip and true or false)
     ui.charCheck:SetChecked(m.perChar and true or false)
+    ui.rankCheck:SetChecked(m.downrank and true or false)
     ui.icon:SetNormalTexture(iconTexture(m))
 
     ns.Builder.Render(ui.builderScroll.content, {
@@ -256,9 +271,9 @@ end
 function MF.Select(index)
     local m, imported = S.Load(index)
     if not m then return end
-    state.macro, state.index = m, index
+    state.macro, state.index, state.otherCharacter = m, index, nil
     state.scope = m.perChar and "character" or "general"
-    newLineage(m.name, m.perChar)
+    newLineage(S.Identity(index))
     ns.Picker.Close()
     MF.Refresh()
     MF.RefreshList()
@@ -267,6 +282,7 @@ end
 
 function MF.New(macro)
     state.macro = macro or U.NewMacro("")
+    state.otherCharacter = nil
     state.macro.perChar = (state.scope == "character")
     state.index = nil
     newLineage(nil)
@@ -274,6 +290,16 @@ function MF.New(macro)
     MF.Refresh()
     MF.RefreshList()
     ui.name:SetFocus()
+end
+
+function MF.Duplicate()
+    if ns.locked or not state.macro then return end
+    commitFocus()
+    local copy = U.copy(state.macro)
+    copy.name = ""
+    state.scope = copy.perChar and "character" or "general"
+    MF.New(copy)
+    MF.Status(L.DUPLICATE_HINT, 0.6, 0.8, 1)
 end
 
 function MF.AddLine(line)
@@ -289,11 +315,18 @@ end
 
 function MF.Save()
     commitFocus()
-    local idx, err = S.Save(state.macro, state.index)
+    local identity = state.idents[state.lineage]
+    local index, err
+    if identity then
+        index, err = S.ResolveIdentity(identity)
+        if not index then MF.Status(err, 1, 0.35, 0.35); return end
+    end
+    local idx
+    idx, err = S.Save(state.macro, index)
     if idx then
         state.index = idx
         state.scope = state.macro.perChar and "character" or "general"
-        state.idents[state.lineage] = { name = U.trim(state.macro.name), perChar = state.macro.perChar and true or false }
+        state.idents[state.lineage] = S.Identity(idx)
         MF.Status(L.SAVED, 0.45, 1, 0.45)
         MF.RefreshList()
     else
@@ -305,8 +338,13 @@ StaticPopupDialogs["BETTERMACRO_DELETE"] = {
     text = "%s",
     button1 = YES or "Yes",
     button2 = NO or "No",
-    OnAccept = function()
-        if state.index then S.Delete(state.index) end
+    OnAccept = function(_, data)
+        if not data or state.lineage ~= data.lineage or state.idents[state.lineage] ~= data.identity then return end
+        local index, err = S.ResolveIdentity(data.identity)
+        if not index then MF.Status(err, 1, 0.35, 0.35); return end
+        local ok
+        ok, err = S.Delete(index)
+        if not ok then MF.Status(err or L.ERR_MACRO_CHANGED, 1, 0.35, 0.35); return end
         state.idents[state.lineage] = nil
         MF.New()
     end,
@@ -315,8 +353,12 @@ StaticPopupDialogs["BETTERMACRO_DELETE"] = {
 
 function MF.Delete()
     if ns.locked then return end
-    if not state.index then MF.New() return end
-    StaticPopup_Show("BETTERMACRO_DELETE", L.CONFIRM_DELETE:format(state.macro.name or ""))
+    local identity = state.idents[state.lineage]
+    if not identity then MF.New() return end
+    local index, err = S.ResolveIdentity(identity)
+    if not index then MF.Status(err, 1, 0.35, 0.35); return end
+    StaticPopup_Show("BETTERMACRO_DELETE", L.CONFIRM_DELETE:format(identity.name or ""), nil,
+        { identity = identity, lineage = state.lineage })
 end
 
 ------------------------------------------------------------------ undo, history, sharing
@@ -324,7 +366,7 @@ local function applyStep(macro, lineage)
     if not macro then return end
     state.macro, state.lineage = macro, lineage
     local id = state.idents[lineage]
-    state.index = id and S.FindIndex(id.name, id.perChar) or nil
+    state.index = id and S.ResolveIdentity(id) or nil
     if state.index then state.scope = id.perChar and "character" or "general" end
     ns.Picker.Close()
     W.CloseMenu()
@@ -364,6 +406,12 @@ end
 local function historyMenu(owner)
     commitFocus()
     local items = {}
+    local identity = state.idents[state.lineage]
+    if identity then
+        local err
+        state.index, err = S.ResolveIdentity(identity)
+        if not state.index then MF.Status(err, 1, 0.35, 0.35); return end
+    end
     if state.index then
         local saved = S.Load(state.index)
         if saved and G.Build(saved) ~= G.Build(state.macro) then
@@ -486,27 +534,49 @@ local function createLeft()
     ui.tabG = W.Flat(f)
     ui.tabG:SetSize(tabW, 20)
     ui.tabG:SetPoint("TOPLEFT", 10, -34)
-    ui.tabG:SetScript("OnClick", function() state.scope = "general"; MF.RefreshList() end)
+    ui.tabG:SetScript("OnClick", function() state.scope = "general"; state.otherCharacter = nil; MF.RefreshList() end)
     ui.tabC = W.Flat(f)
     ui.tabC:SetSize(tabW, 20)
-    ui.tabC:SetScript("OnClick", function() state.scope = "character"; MF.RefreshList() end)
+    ui.tabC:SetScript("OnClick", function() state.scope = "character"; state.otherCharacter = nil; MF.RefreshList() end)
+
+    local others = W.Flat(f)
+    others:SetSize(LEFT_W, 20)
+    others:SetPoint("TOPLEFT", 10, -58)
+    others:SetStyle("plain")
+    ui.otherLabel = others.label
+    others:SetScript("OnClick", function(self)
+        local items = {}
+        for _, name in ipairs(S.OtherCharacters()) do
+            items[#items + 1] = { text = name, value = name, checked = name == state.otherCharacter }
+        end
+        if #items == 0 then MF.Status(L.OTHER_EMPTY, 1, 0.75, 0.2); return end
+        W.OpenMenu(self, items, function(name)
+            state.scope, state.otherCharacter = "character", name
+            MF.RefreshList()
+        end)
+    end)
+    W.Tooltip(others, L.OTHER_CHARACTERS, L.OTHER_TIP)
 
     local panel = W.Panel(f)
-    panel:SetPoint("TOPLEFT", 10, -58)
-    panel:SetSize(LEFT_W, 548)
-    ui.listScroll = W.Scroll(panel, LEFT_W, 540)
+    panel:SetPoint("TOPLEFT", 10, -82)
+    panel:SetSize(LEFT_W, 564)
+    ui.listScroll = W.Scroll(panel, LEFT_W, 556)
     ui.listScroll:SetPoint("TOPLEFT", 4, -4)
     ui.listRows = {}
     ui.listEmpty = W.Text(panel, "GameFontDisableSmall", L.EMPTY_LIST)
     ui.listEmpty:SetPoint("TOP", 0, -12)
 
-    local new = W.Button(f, L.NEW, 126, 24)
+    local new = W.Button(f, L.NEW, 68, 24)
     new:SetPoint("BOTTOMLEFT", 10, 12)
     new:SetScript("OnClick", function() if not ns.locked then MF.New() end end)
-    local import = W.Button(f, L.IMPORT, LEFT_W - 130, 24)
+    local import = W.Button(f, L.IMPORT, 74, 24)
     import:SetPoint("LEFT", new, "RIGHT", 4, 0)
     import:SetScript("OnClick", function() if not ns.locked then ns.ShareFrame.ShowImport(MF.Import) end end)
     W.Tooltip(import, L.IMPORT, L.IMPORT_TIP)
+    local duplicate = W.Button(f, L.DUPLICATE, LEFT_W - 150, 24)
+    duplicate:SetPoint("LEFT", import, "RIGHT", 4, 0)
+    duplicate:SetScript("OnClick", MF.Duplicate)
+    W.Tooltip(duplicate, L.DUPLICATE, L.DUPLICATE_HINT)
 end
 
 local function createHeader()
@@ -516,7 +586,11 @@ local function createHeader()
     icon:SetScript("OnClick", function(self) if not ns.locked then iconMenu(self) end end)
     icon:SetScript("OnDragStart", function()
         if ns.locked then return end
-        if not state.index then MF.Status(L.SAVE_FIRST, 1, 0.75, 0.2) return end
+        local identity = state.idents[state.lineage]
+        if not identity then MF.Status(L.SAVE_FIRST, 1, 0.75, 0.2) return end
+        local index, err = S.ResolveIdentity(identity)
+        if not index then MF.Status(err, 1, 0.35, 0.35); return end
+        state.index = index
         PickupMacro(state.index)
     end)
     W.Tooltip(icon, L.DRAG_HINT, L.ICON_TIP)
@@ -569,13 +643,13 @@ end
 local function createCenter()
     local panel = W.Panel(f)
     panel:SetPoint("TOPLEFT", CENTER_X, -74)
-    panel:SetSize(CENTER_W, 272)
-    ui.builderScroll = W.Scroll(panel, CENTER_W - 4, 264)
+    panel:SetSize(CENTER_W, 412)
+    ui.builderScroll = W.Scroll(panel, CENTER_W - 4, 404)
     ui.builderScroll:SetPoint("TOPLEFT", 4, -4)
     ui.builderPanel = panel
 
     local add = W.Button(f, L.ADD_LINE, 110, 22)
-    add:SetPoint("TOPLEFT", CENTER_X, -352)
+    add:SetPoint("TOPLEFT", CENTER_X, -492)
     add:SetScript("OnClick", function(self) if not ns.locked then addLineMenu(self) end end)
 
     local share = W.Button(f, L.SHARE, 84, 22)
@@ -584,7 +658,7 @@ local function createCenter()
     W.Tooltip(share, L.SHARE, L.SHARE_TIP)
 
     ui.redo = W.Button(f, L.REDO, 80, 22)
-    ui.redo:SetPoint("TOPRIGHT", f, "TOPLEFT", CENTER_X + CENTER_W, -352)
+    ui.redo:SetPoint("TOPRIGHT", f, "TOPLEFT", CENTER_X + CENTER_W, -492)
     ui.redo:SetScript("OnClick", MF.Redo)
     W.Tooltip(ui.redo, L.REDO, L.REDO_TIP)
     ui.undo = W.Button(f, L.UNDO, 80, 22)
@@ -596,23 +670,41 @@ local function createCenter()
     hist:SetScript("OnClick", function(self) if not ns.locked then historyMenu(self) end end)
     W.Tooltip(hist, L.HISTORY, L.HISTORY_TIP)
 
-    sectionTitle(L.EXPLAIN, CENTER_X, -384)
-    local ep = W.Panel(f)
-    ep:SetPoint("TOPLEFT", CENTER_X, -402)
-    ep:SetSize(CENTER_W, 150)
-    W.Backdrop(ep, { 0.09, 0.09, 0.11, 0.95 }, { 0.25, 0.25, 0.28, 1 })
-    ui.explainScroll = W.Scroll(ep, CENTER_W - 4, 142)
-    ui.explainScroll:SetPoint("TOPLEFT", 6, -4)
+    local ep = CreateFrame("Frame", "BetterMacroExplanationFrame", f, BACKDROP_TEMPLATE)
+    ep:SetSize(CENTER_W, 300)
+    ep:SetPoint("CENTER")
+    ep:SetFrameStrata("DIALOG")
+    ep:EnableMouse(true)
+    W.Backdrop(ep, { 0.04, 0.04, 0.05, 0.98 }, { 0.45, 0.45, 0.5, 1 })
+    ep:Hide()
+    tinsert(UISpecialFrames, "BetterMacroExplanationFrame")
+    local title = W.Text(ep, "GameFontNormal", L.EXPLAIN)
+    title:SetPoint("TOPLEFT", 14, -12)
+    local close = CreateFrame("Button", nil, ep, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", 2, 2)
+    ui.explainScroll = W.Scroll(ep, CENTER_W - 20, 252)
+    ui.explainScroll:SetPoint("TOPLEFT", 10, -34)
     ui.explainRows = {}
+    local explain = W.Button(f, L.EXPLAIN, 180, 22)
+    explain:SetPoint("TOPLEFT", CENTER_X, -522)
+    explain:SetScript("OnClick", function() ep:SetShown(not ep:IsShown()) end)
+    ui.rankCheck = W.Check(f, L.RANK_TITLE)
+    ui.rankCheck:SetPoint("TOPLEFT", CENTER_X + 195, -522)
+    ui.rankCheck:SetScript("OnClick", function(self)
+        if ns.locked then self:SetChecked(state.macro.downrank); return end
+        state.macro.downrank = self:GetChecked() and true or false
+        MF.Refresh()
+    end)
+    W.Tooltip(ui.rankCheck, L.RANK_TITLE, L.RANK_TIP)
 
     local tt = W.Text(f, "GameFontDisableSmall", L.TEXT)
-    tt:SetPoint("TOPLEFT", CENTER_X, -560)
+    tt:SetPoint("TOPLEFT", CENTER_X, -554)
     ui.count = W.Text(f, "GameFontHighlightSmall")
-    ui.count:SetPoint("TOPRIGHT", f, "TOPLEFT", CENTER_X + CENTER_W, -560)
+    ui.count:SetPoint("TOPRIGHT", f, "TOPLEFT", CENTER_X + CENTER_W, -554)
 
     -- Gauge of the 255 characters WoW allows, between the label and the count
     local track = W.Panel(f)
-    track:SetPoint("TOPLEFT", CENTER_X + 104, -561)
+    track:SetPoint("TOPLEFT", CENTER_X + 104, -555)
     track:SetSize(CENTER_W - 104 - 150, 10)
     W.Backdrop(track, { 0.09, 0.09, 0.11, 0.95 }, { 0.3, 0.3, 0.33, 1 })
     ui.gauge = CreateFrame("StatusBar", nil, track)
@@ -624,7 +716,7 @@ local function createCenter()
     track:EnableMouse(true)
     W.Tooltip(track, L.GAUGE, L.GAUGE_TIP)
     ui.text = W.Text(f, "GameFontHighlightSmall")
-    ui.text:SetPoint("TOPLEFT", CENTER_X, -574)
+    ui.text:SetPoint("TOPLEFT", CENTER_X, -568)
     ui.text:SetWidth(CENTER_W)
     ui.text:SetWordWrap(true)
     ui.text:SetTextColor(0.75, 0.9, 1)
@@ -650,17 +742,25 @@ end
 local function createRight()
     local x = CENTER_X + CENTER_W + 14
     local w = FRAME_W - x - 12
-    sectionTitle(L.TEMPLATES, x, -32)
-    local y = -52
+    local scroll = W.Scroll(f, w, 628)
+    scroll:SetPoint("TOPLEFT", x, -32)
+    local content = scroll.content
+    local contentW = w - 26
+    local function title(label, y)
+        local text = W.Text(content, "GameFontNormal", label)
+        text:SetPoint("TOPLEFT", 0, y)
+    end
+    title(L.TEMPLATES, 0)
+    local y = -20
     for i, t in ipairs(T.list) do
-        local b = W.Flat(f)
+        local b = W.Flat(content)
         b:SetStyle("plain")
         b:SetLabel(L[t.key], false)
         b.label:ClearAllPoints()
         b.label:SetPoint("LEFT", 6, 0)
         b.label:SetPoint("RIGHT", -4, 0)
-        b:SetSize(w, 20)
-        b:SetPoint("TOPLEFT", x, y)
+        b:SetSize(contentW, 20)
+        b:SetPoint("TOPLEFT", 0, y)
         b:SetScript("OnClick", function()
             if ns.locked then return end
             MF.New(T.Build(i))
@@ -669,7 +769,7 @@ local function createRight()
     end
 
     y = y - 12
-    sectionTitle(L.BLOCKS, x, y)
+    title(L.BLOCKS, y)
     y = y - 20
     local blocks = {
         { L.K_CAST, function() return U.NewCastLine("cast") end },
@@ -681,25 +781,93 @@ local function createRight()
         blocks[#blocks + 1] = { L["CMDNAME_" .. c], function() return U.NewCommandLine(c) end, true }
     end
     for _, def in ipairs(blocks) do
-        local b = W.Flat(f)
+        local b = W.Flat(content)
         b:SetStyle(def[3] and "off" or "action")
         b:SetLabel(def[1], false)
         b.label:ClearAllPoints()
         b.label:SetPoint("LEFT", 6, 0)
-        b:SetSize(w, 20)
-        b:SetPoint("TOPLEFT", x, y)
+        b:SetSize(contentW, 20)
+        b:SetPoint("TOPLEFT", 0, y)
         b:SetScript("OnClick", function() MF.AddLine(def[2]()) end)
         y = y - 22
     end
+
+    y = y - 12
+    title(L.MY_TEMPLATES, y)
+    y = y - 20
+    local save = W.Button(content, L.SAVE_TEMPLATE, contentW, 22)
+    save:SetPoint("TOPLEFT", 0, y)
+    save:SetScript("OnClick", function()
+        if ns.locked or not state.macro then return end
+        commitFocus()
+        if U.trim(state.macro.name) == "" then MF.Status(L.ERR_NAME, 1, 0.35, 0.35); return end
+        for _, template in ipairs(S.Templates()) do
+            if template.name == U.trim(state.macro.name) then
+                StaticPopup_Show("BETTERMACRO_TEMPLATE_REPLACE", state.macro.name)
+                return
+            end
+        end
+        S.SaveTemplate(state.macro)
+        ui.refreshTemplates()
+        MF.Status(L.TEMPLATE_SAVED, 0.45, 1, 0.45)
+    end)
+    y = y - 26
+    local rows = {}
+    ui.refreshTemplates = function()
+        for _, row in ipairs(rows) do row:Hide() end
+        local templates = S.Templates()
+        for i, template in ipairs(templates) do
+            local row = rows[i]
+            if not row then
+                row = W.Flat(content)
+                row.label:ClearAllPoints()
+                row.label:SetPoint("LEFT", 6, 0)
+                row.label:SetPoint("RIGHT", -4, 0)
+                rows[i] = row
+            end
+            row:SetStyle("plain")
+            row:SetSize(contentW, 20)
+            row:SetPoint("TOPLEFT", 0, y - (i - 1) * 22)
+            row:SetLabel(template.name, false)
+            row:SetScript("OnClick", function(_, button)
+                if ns.locked then return end
+                if button == "RightButton" then
+                    StaticPopup_Show("BETTERMACRO_TEMPLATE_DELETE", template.name, nil, i)
+                else
+                    MF.New(U.copy(template))
+                end
+            end)
+            row:Show()
+        end
+        content:SetHeight(math.max(628, -y + #templates * 22 + 8))
+    end
+    ui.refreshTemplates()
 end
+
+StaticPopupDialogs["BETTERMACRO_TEMPLATE_REPLACE"] = {
+    text = L.TEMPLATE_REPLACE, button1 = YES or "Yes", button2 = NO or "No",
+    OnAccept = function()
+        if ns.locked or not state.macro then return end
+        S.SaveTemplate(state.macro); ui.refreshTemplates(); MF.Status(L.TEMPLATE_SAVED, 0.45, 1, 0.45)
+    end,
+    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
+StaticPopupDialogs["BETTERMACRO_TEMPLATE_DELETE"] = {
+    text = L.TEMPLATE_DELETE, button1 = YES or "Yes", button2 = NO or "No",
+    OnAccept = function(_, index)
+        if ns.locked or not index then return end
+        S.DeleteTemplate(index); ui.refreshTemplates()
+    end,
+    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
 
 local function createLockOverlay()
     -- In combat the game forbids saving macros: we keep the window readable,
     -- the live test running, and block edits on the list, blocks and palette.
     local zones = {
-        { 8, -28, CENTER_X - 4, -640 },                 -- macro list
-        { CENTER_X - 2, -26, CENTER_X + CENTER_W + 2, -378 }, -- header + blocks
-        { CENTER_X + CENTER_W + 8, -28, FRAME_W - 8, -640 },    -- palette
+        { 8, -28, CENTER_X - 4, -680 },                 -- macro list
+        { CENTER_X - 2, -26, CENTER_X + CENTER_W + 2, -518 }, -- header + blocks
+        { CENTER_X + CENTER_W + 8, -28, FRAME_W - 8, -680 },    -- palette
     }
     local frames = {}
     for i, z in ipairs(zones) do
@@ -723,7 +891,7 @@ function MF.Create()
     if f then return end
     f = CreateFrame("Frame", "BetterMacroFrame", UIParent, BACKDROP_TEMPLATE)
     W.Backdrop(f, { 0.04, 0.04, 0.05, 0.97 }, { 0.4, 0.4, 0.45, 1 })
-    f:SetSize(FRAME_W, 660)
+    f:SetSize(FRAME_W, 700)
     f:SetPoint("CENTER")
     f:SetFrameStrata("HIGH")
     f:SetClampedToScreen(true)

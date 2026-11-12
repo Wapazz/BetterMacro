@@ -89,11 +89,13 @@ end
 -- Action slot: shows the chosen spell/item; click opens the picker, drop accepts
 -- a spell or item from the cursor, right-click clears.
 local function actionSlot(ctx, parent, action, x, y, w, tab, set, emptyLabel)
+    local ranked = ctx.macro.downrank and action and action.kind == "spell"
+    local rankWidth = 72
     local b = pools.slot:Acquire()
     b:SetParent(parent)
     b:SetFrameLevel(parent:GetFrameLevel() + 2)
     b:SetStyle(action and "action" or "off")
-    b:SetSize(w, 20)
+    b:SetSize(ranked and (w - rankWidth - 4) or w, 20)
     b:SetPoint("TOPLEFT", x, -y)
     b.icon:SetTexture(D.Icon(action))
     b.label:SetText(D.Label(action) or emptyLabel or L.CHOOSE)
@@ -110,6 +112,29 @@ local function actionSlot(ctx, parent, action, x, y, w, tab, set, emptyLabel)
     end)
     b:SetScript("OnEnter", nil)
     b:SetScript("OnLeave", nil)
+    if ranked then
+        local rank = flat(parent, action.rank and L.RANK_FORMAT:format(action.rank) or L.RANK_MAX, "plain", x + w - rankWidth, y, rankWidth)
+        rank:SetWidth(rankWidth)
+        rank:SetScript("OnClick", function(self)
+            if ns.locked then return end
+            local items = { { text = L.RANK_MAX, value = 0, checked = not action.rank } }
+            local ranks = D.SpellRanks(action)
+            if #ranks == 0 and ns.MainFrame then ns.MainFrame.Status(L.RANK_NONE, 1, 0.75, 0.2) end
+            for _, known in ipairs(ranks) do
+                items[#items + 1] = { text = known.text, value = known, checked = action.rank == known.rank }
+            end
+            W.OpenMenu(self, items, function(value)
+                local changed = U.copy(action)
+                changed.rank = value ~= 0 and value.rank or nil
+                changed.rankText = value ~= 0 and value.text or nil
+                set(changed)
+            end)
+        end)
+        rank:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText(L.RANK_TITLE); GameTooltip:AddLine(L.RANK_TIP, 1, 1, 1, true); GameTooltip:Show()
+        end)
+        rank:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
     return b
 end
 
@@ -252,18 +277,13 @@ local function drawCast(ctx, card, line, li, W_, live)
     local add = flat(card, L.ADD_BRANCH, "ghost", 54, y)
     add:SetScript("OnClick", function()
         if ns.locked then return end
-        local br = line.branches
-        local last = br[#br]
-        local a = last and U.copy(last.action)
-        if last and U.IsCatchAll(last) then
-            -- Insert before the fallback so it stays reachable
-            local nb = { unit = "mouseover", action = a }
-            U.ApplyGuards(nb, D.Nature(a))
-            table.insert(br, #br, nb)
-        else
-            br[#br + 1] = { action = a }
+        local unreachable = false
+        for _, branch in ipairs(line.branches) do
+            if U.IsCatchAll(branch) then unreachable = true; break end
         end
+        U.AddBranch(line)
         ctx.changed()
+        if unreachable and ns.MainFrame then ns.MainFrame.Status(L.BRANCH_AFTER_FALLBACK, 1, 0.75, 0.2) end
     end)
     return y + ROW
 end

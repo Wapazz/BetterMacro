@@ -40,6 +40,10 @@ Every block is a line of your macro. Pick a spell or an item by searching for it
 - **Length gauge.** A bar shows how much of the 255-character limit you have used, and a Compress button shortens the text when you run over.
 - **Undo and history.** Ctrl+Z and Ctrl+Y work in the editor. Each time you save a change, the previous version is kept, and deleted macros can be brought back.
 - **Share with friends.** Turn any macro into a short code, paste it in Discord or in a whisper, and your friend imports it in one click. Nothing is saved on their side until they have read what it does.
+- **Duplicate and save templates.** Duplicate opens an unsaved copy. Save as template keeps a personal template below the blocks; right-click it to delete it.
+- **Duplicate names.** Macros may share a name. BetterMacro matches them using their scope, name, icon and text; completely identical copies can share BetterMacro metadata until one changes.
+- **Spell ranks.** Enable spell ranks to choose a rank found in your spellbook beside a spell, or leave it at Highest. Hiding the selectors does not remove chosen ranks.
+- **Other characters.** Browse the character-specific macros last recorded for your other characters. Clicking one opens an unsaved copy on the current character. Each character must log in with BetterMacro first; the list is a snapshot, not live access to another character.
 - **Works with the macros you already have.** Open an existing macro and it is rebuilt as blocks. Anything BetterMacro does not recognise is kept as a "raw text" block, so nothing is lost.
 
 ## Good to know
