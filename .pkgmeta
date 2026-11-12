@@ -9,3 +9,4 @@ ignore:
   - CHANGELOG.md
   - tests
   - Media/BetterMacro-512.png
+  - Tools
