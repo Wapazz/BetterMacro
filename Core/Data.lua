@@ -33,6 +33,42 @@ function D.SlotName(id)
     return D.SlotRealName(id) or L.SLOT_FALLBACK:format(id or 0)
 end
 
+------------------------------------------------------------------ macro icons
+-- Every icon the game offers for macros. Depending on the client these
+-- functions fill the table they are given or return a new one, and give
+-- file IDs or texture names: both are accepted by CreateMacro/EditMacro.
+local iconCache
+
+function D.ListIcons()
+    if iconCache then return iconCache end
+    local out, seen = {}, {}
+    local function collect(fn)
+        if not fn then return end
+        local t = {}
+        local ok, r = pcall(fn, t)
+        if not ok then return end
+        if type(r) == "table" then t = r end
+        for _, v in ipairs(t) do
+            if v and v ~= "" and not seen[v] then
+                seen[v] = true
+                out[#out + 1] = v
+            end
+        end
+    end
+    collect(GetLooseMacroIcons)
+    collect(GetLooseMacroItemIcons)
+    collect(GetMacroIcons)
+    collect(GetMacroItemIcons)
+    if #out > 0 then iconCache = out end -- empty: try again next time
+    return out
+end
+
+-- Texture to draw for a stored icon value (file ID, short name or full path).
+function D.IconTexture(v)
+    if type(v) == "string" and not v:find("[\\/]") then return "Interface\\Icons\\" .. v end
+    return v
+end
+
 ------------------------------------------------------------------ spells
 function D.SpellName(id)
     if not id then return nil end
@@ -64,6 +100,58 @@ function D.SpellAction(id)
     local name = D.SpellName(id)
     if not name then return nil end
     return { kind = "spell", id = id, name = name }
+end
+
+-- Read actual spellbook entries instead of guessing which ranks exist. The
+-- spellbook API exposes lower ranks even when the UI hides them; subName can
+-- temporarily be empty while spell text loads, so an empty result is safe.
+function D.SpellRanks(action)
+    local out, seen = {}, {}
+    if not action or action.kind ~= "spell" or not action.name then return out end
+    local function add(name, subName)
+        if name ~= action.name or type(subName) ~= "string" then return end
+        local n = subName:match("^[Rr]ank%s*(%d+)$") or subName:match("^[Rr]ang%s*(%d+)$")
+        n = tonumber(n)
+        if n and n > 0 and not seen[n] then
+            seen[n] = true
+            out[#out + 1] = { rank = n, text = subName }
+        end
+    end
+    if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines
+        and C_SpellBook.GetSpellBookSkillLineInfo and C_SpellBook.GetSpellBookItemInfo then
+        local bank = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player) or 0
+        local spellType = Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Spell
+        for i = 1, try(C_SpellBook.GetNumSpellBookSkillLines) or 0 do
+            local line = try(C_SpellBook.GetSpellBookSkillLineInfo, i)
+            if line and line.itemIndexOffset and line.numSpellBookItems then
+                for idx = line.itemIndexOffset + 1, line.itemIndexOffset + line.numSpellBookItems do
+                    local item = try(C_SpellBook.GetSpellBookItemInfo, idx, bank)
+                    if item and not item.isOffSpec and (not spellType or item.itemType == spellType) then
+                        local name, subName = item.name, item.subName
+                        if (not name or not subName or subName == "") and C_SpellBook.GetSpellBookItemName then
+                            name, subName = try(C_SpellBook.GetSpellBookItemName, idx, bank)
+                        end
+                        add(name, subName)
+                    end
+                end
+            end
+        end
+    elseif GetNumSpellTabs and GetSpellTabInfo and GetSpellBookItemName then
+        for tab = 1, try(GetNumSpellTabs) or 0 do
+            local _, _, offset, count = try(GetSpellTabInfo, tab)
+            if offset and count then
+                for idx = offset + 1, offset + count do
+                    local kind = GetSpellBookItemInfo and try(GetSpellBookItemInfo, idx, "spell")
+                    if not kind or kind == "SPELL" then
+                        local name, subName = try(GetSpellBookItemName, idx, "spell")
+                        add(name, subName)
+                    end
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.rank < b.rank end)
+    return out
 end
 
 function D.ListSpells()
@@ -226,6 +314,11 @@ end
 
 -- Used by the parser to turn a name from macro text into an action.
 function D.Resolve(name, cmd)
+    local base, rankText = name:match("^(.-)%s*%(([^()]*)%)$")
+    local rank = rankText and (rankText:match("^[Rr]ank%s*(%d+)$") or rankText:match("^[Rr]ang%s*(%d+)$"))
+    if rank and base ~= "" then
+        return { kind = "spell", id = D.SpellIdFromName(base), name = base, rank = tonumber(rank), rankText = rankText }
+    end
     local n = tonumber(name)
     if n then return { kind = "slot", id = n, name = tostring(n) } end
     if cmd == "use" then

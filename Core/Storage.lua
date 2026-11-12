@@ -13,6 +13,8 @@ function S.Init()
     BetterMacroDB.minimap = BetterMacroDB.minimap or { angle = 200 }
     BetterMacroDB.history = BetterMacroDB.history or {}
     BetterMacroDB.trash = BetterMacroDB.trash or {}
+    BetterMacroDB.templates = BetterMacroDB.templates or {}
+    BetterMacroDB.characters = BetterMacroDB.characters or {}
 end
 
 S.MAX_VERSIONS = 8 -- earlier saved versions kept per macro
@@ -28,14 +30,63 @@ local function charKey()
     return name .. "-" .. realm
 end
 
+function S.CharacterKey() return charKey() end
+
+function S.SnapshotCharacter()
+    if not GetNumMacros or not GetMacroInfo then return end
+    local _, character = S.List()
+    local snapshot = {}
+    for _, entry in ipairs(character) do
+        local model = S.Load(entry.index)
+        if model then snapshot[#snapshot + 1] = model end
+    end
+    BetterMacroDB.characters[charKey()] = snapshot
+end
+
+function S.OtherCharacters()
+    local names = {}
+    for name in pairs(BetterMacroDB.characters) do
+        if name ~= charKey() then names[#names + 1] = name end
+    end
+    table.sort(names)
+    return names
+end
+
+function S.CharacterMacros(name)
+    return BetterMacroDB.characters[name] or {}
+end
+
+function S.SaveTemplate(macro)
+    local name = U.trim(macro.name)
+    if name == "" then return false end
+    local templates = BetterMacroDB.templates
+    local copy = U.copy(macro)
+    copy.name = name
+    for i, entry in ipairs(templates) do
+        if entry.name == name then templates[i] = copy; return true end
+    end
+    templates[#templates + 1] = copy
+    return true
+end
+
+function S.Templates() return BetterMacroDB.templates end
+function S.DeleteTemplate(index) table.remove(BetterMacroDB.templates, index) end
+
 local function key(name, perChar)
     return (perChar and ("C:" .. charKey() .. ":") or "G:") .. (name or "")
 end
 
+-- A fingerprint distinguishes same-named macros without relying on WoW's
+-- movable list index. Identical copies intentionally share metadata until one
+-- changes; the game exposes no stable ID that could distinguish them.
+local function recordKey(name, icon, body, perChar)
+    return "F:" .. key("", perChar) .. U.sig({ name = name, icon = icon, body = body })
+end
+
 local function normalize(body)
     local out = {}
-    for line in ((body or "") .. "\n"):gmatch("([^\n]*)\n") do
-        line = U.trim(line)
+    for raw in ((body or "") .. "\n"):gmatch("([^\n]*)\n") do
+        local line = U.trim(raw)
         if line ~= "" then out[#out + 1] = line end
     end
     return table.concat(out, "\n")
@@ -57,10 +108,13 @@ end
 
 -- Earlier saved versions of the macro in this slot: { { t, body, m }, ... }, newest first.
 function S.Versions(index)
-    local name = index and GetMacroInfo(index)
+    if not index then return {} end
+    local name, icon, body = GetMacroInfo(index)
     if not name then return {} end
     local maxA = S.Limits()
-    return BetterMacroDB.history[key(name, index > maxA)] or {}
+    local perChar = index > maxA
+    local k = recordKey(name, icon, body, perChar)
+    return BetterMacroDB.history[k] or (S.FindIndex(name, perChar) and BetterMacroDB.history[key(name, perChar)]) or {}
 end
 
 -- Deleted macros: { { t, name, perChar, body, m }, ... }, newest first.
@@ -90,7 +144,8 @@ function S.Load(index)
     local name, icon, body = GetMacroInfo(index)
     if not name then return nil end
     local perChar = index > maxA
-    local stored = BetterMacroDB.macros[key(name, perChar)]
+    local stored = BetterMacroDB.macros[recordKey(name, icon, body, perChar)]
+        or BetterMacroDB.macros[key(name, perChar)]
     if stored and normalize(G.Build(stored)) == normalize(body) then
         local m = U.copy(stored)
         m.name, m.perChar = name, perChar
@@ -110,11 +165,14 @@ function S.Save(macro, index)
     local body = G.Build(macro)
     if #body > 255 then return nil, L.ERR_LONG end
 
-    local oldKey, before, beforeBody
+    local oldKey, before, beforeBody, oldVersions
     if index then
-        local oldName, _, oldBody = GetMacroInfo(index)
+        local oldName, oldIcon, oldBody = GetMacroInfo(index)
+        if not oldName then return nil, L.ERR_MACRO_CHANGED end
         local maxA = S.Limits()
         local wasPerChar = index > maxA
+        oldKey = recordKey(oldName, oldIcon, oldBody, wasPerChar)
+        oldVersions = U.copy(S.Versions(index))
         before, beforeBody = S.Load(index), oldBody or ""
         if wasPerChar ~= (macro.perChar and true or false) then
             -- Moving between General and Character: create in the new scope, then delete
@@ -123,14 +181,13 @@ function S.Save(macro, index)
             local newIndex, err = S.Save(U.copy(macro), nil)
             if not newIndex then return nil, err end
             DeleteMacro(index)
-            local movedKey, newKey = key(oldName, wasPerChar), key(name, macro.perChar)
-            BetterMacroDB.macros[movedKey] = nil
-            BetterMacroDB.history[newKey] = BetterMacroDB.history[movedKey]
-            BetterMacroDB.history[movedKey] = nil
+            local newName, newIcon, newBody = GetMacroInfo(newIndex)
+            local newKey = recordKey(newName, newIcon, newBody, macro.perChar)
+            BetterMacroDB.history[newKey] = oldVersions
             if before and normalize(beforeBody) ~= normalize(body) then pushVersion(newKey, before, beforeBody) end
-            return S.FindIndex(name, macro.perChar), nil
+            S.SnapshotCharacter()
+            return newIndex, nil
         end
-        oldKey = key(oldName, wasPerChar)
     else
         local maxA, maxC = S.Limits()
         local numA, numC = GetNumMacros()
@@ -147,31 +204,57 @@ function S.Save(macro, index)
     end
     if not ok then return nil, tostring(newIndex) end
 
-    if oldKey then BetterMacroDB.macros[oldKey] = nil end
+    if not newIndex then return nil, L.ERR_MACRO_CHANGED end
     local saved = U.copy(macro)
     saved.name = name
-    local newKey = key(name, macro.perChar)
+    local savedName, savedIcon, savedBody = GetMacroInfo(newIndex)
+    if not savedName then return nil, L.ERR_MACRO_CHANGED end
+    local newKey = recordKey(savedName, savedIcon, savedBody, macro.perChar)
     BetterMacroDB.macros[newKey] = saved
     if oldKey then
-        -- The history follows the macro when it is renamed
         if oldKey ~= newKey then
-            BetterMacroDB.history[newKey] = BetterMacroDB.history[oldKey]
-            BetterMacroDB.history[oldKey] = nil
+            BetterMacroDB.history[newKey] = oldVersions
         end
         if before and normalize(beforeBody) ~= normalize(body) then
             pushVersion(newKey, before, beforeBody)
         end
-    else
-        BetterMacroDB.history[newKey] = nil -- a new macro starts with no history
     end
+    S.SnapshotCharacter()
     return newIndex or S.FindIndex(name, macro.perChar), nil
 end
 
 function S.FindIndex(name, perChar)
     local general, character = S.List()
+    local found
     for _, m in ipairs(perChar and character or general) do
-        if m.name == name then return m.index end
+        if m.name == name then
+            if found then return nil end
+            found = m.index
+        end
     end
+    return found
+end
+
+-- Prefer the last slot for identical copies; otherwise follow the fingerprint.
+function S.ResolveIdentity(identity)
+    if not identity then return nil, L.ERR_MACRO_CHANGED end
+    local general, character = S.List()
+    local found
+    for _, entry in ipairs(identity.perChar and character or general) do
+        if entry.name == identity.name and entry.icon == identity.icon and entry.body == identity.body then
+            if entry.index == identity.index then return entry.index end
+            found = found or entry.index
+        end
+    end
+    if found then identity.index = found; return found end
+    return nil, L.ERR_MACRO_CHANGED
+end
+
+function S.Identity(index)
+    local name, icon, body = GetMacroInfo(index)
+    if not name then return nil end
+    local maxA = S.Limits()
+    return { name = name, icon = icon, body = body, perChar = index > maxA, index = index }
 end
 
 function S.Delete(index)
@@ -186,8 +269,7 @@ function S.Delete(index)
         table.insert(BetterMacroDB.trash, 1, { t = now(), name = name, perChar = perChar, body = body or "", m = model })
         while #BetterMacroDB.trash > S.MAX_TRASH do table.remove(BetterMacroDB.trash) end
     end
-    BetterMacroDB.macros[key(name, perChar)] = nil
-    BetterMacroDB.history[key(name, perChar)] = nil
     DeleteMacro(index)
+    S.SnapshotCharacter()
     return true
 end

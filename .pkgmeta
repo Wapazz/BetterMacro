@@ -7,4 +7,6 @@ manual-changelog:
 ignore:
   - README.md
   - CHANGELOG.md
+  - tests
   - Media/BetterMacro-512.png
+  - Tools

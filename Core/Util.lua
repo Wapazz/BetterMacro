@@ -100,6 +100,14 @@ function U.IsCatchAll(b)
     return not U.HasConditions(b)
 end
 
+-- Append without moving existing branches. An earlier fallback may need editing
+-- before the new branch can be reached; the explainer reports that condition.
+function U.AddBranch(line)
+    local branches = line.branches
+    local last = branches[#branches]
+    branches[#branches + 1] = { action = last and U.copy(last.action) or nil }
+end
+
 -- Stable text signature of a model table (keys sorted), used to tell whether
 -- two versions of a macro are the same.
 function U.sig(v)

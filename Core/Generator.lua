@@ -1,5 +1,5 @@
 local _, ns = ...
-local U = ns.U
+local U, L = ns.U, ns.L
 
 local G = {}
 ns.Generator = G
@@ -7,7 +7,11 @@ ns.Generator = G
 function G.ActionText(a)
     if not a then return "" end
     if a.kind == "slot" then return tostring(a.id or a.name or "") end
-    return a.name or ""
+    local name = a.name or ""
+    if a.kind == "spell" and a.rank and name ~= "" then
+        return name .. "(" .. (a.rankText or L.RANK_FORMAT:format(a.rank)) .. ")"
+    end
+    return name
 end
 
 -- Condition tokens for one branch, in a stable order.

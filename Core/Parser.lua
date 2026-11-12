@@ -101,16 +101,16 @@ local function parseSequence(rest, resolve)
     local reset = after:match("^reset=(%S+)")
     if reset then
         after = U.trim(after:sub(#reset + 7))
-        for part in (reset .. "/"):gmatch("([^/]*)/") do
-            part = part:lower()
+        for rawPart in (reset .. "/"):gmatch("([^/]*)/") do
+            local part = rawPart:lower()
             local n = tonumber(part)
             if n then line.reset.seconds = n
             elseif part == "target" or part == "combat" or MODS[part] then line.reset[part] = true
             else return nil end
         end
     end
-    for step in (after .. ","):gmatch("([^,]*),") do
-        step = U.trim(step)
+    for rawStep in (after .. ","):gmatch("([^,]*),") do
+        local step = U.trim(rawStep)
         if step == "" then return nil end
         line.steps[#line.steps + 1] = resolve(step, "cast")
     end
@@ -157,6 +157,17 @@ function P.Parse(body, resolve, name)
                 macro.lines[#macro.lines + 1] = P.ParseLine(text, resolve)
             end
             first = false
+        end
+    end
+    local function ranked(action) return action and action.kind == "spell" and action.rank end
+    if ranked(macro.tooltipAction) then macro.downrank = true end
+    for _, line in ipairs(macro.lines) do
+        if ranked(line.action) then macro.downrank = true end
+        for _, branch in ipairs(line.branches or {}) do
+            if ranked(branch.action) then macro.downrank = true end
+        end
+        for _, action in ipairs(line.steps or {}) do
+            if ranked(action) then macro.downrank = true end
         end
     end
     return macro
