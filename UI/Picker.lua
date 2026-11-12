@@ -112,6 +112,7 @@ end
 -- tab: "spell" | "item" | "slot"
 function Pk.Open(anchor, tab, cb)
     if not frame then create() end
+    if ns.IconPicker then ns.IconPicker.Close() end
     current.cb = cb
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)

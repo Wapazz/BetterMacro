@@ -33,6 +33,42 @@ function D.SlotName(id)
     return D.SlotRealName(id) or L.SLOT_FALLBACK:format(id or 0)
 end
 
+------------------------------------------------------------------ macro icons
+-- Every icon the game offers for macros. Depending on the client these
+-- functions fill the table they are given or return a new one, and give
+-- file IDs or texture names: both are accepted by CreateMacro/EditMacro.
+local iconCache
+
+function D.ListIcons()
+    if iconCache then return iconCache end
+    local out, seen = {}, {}
+    local function collect(fn)
+        if not fn then return end
+        local t = {}
+        local ok, r = pcall(fn, t)
+        if not ok then return end
+        if type(r) == "table" then t = r end
+        for _, v in ipairs(t) do
+            if v and v ~= "" and not seen[v] then
+                seen[v] = true
+                out[#out + 1] = v
+            end
+        end
+    end
+    collect(GetLooseMacroIcons)
+    collect(GetLooseMacroItemIcons)
+    collect(GetMacroIcons)
+    collect(GetMacroItemIcons)
+    if #out > 0 then iconCache = out end -- empty: try again next time
+    return out
+end
+
+-- Texture to draw for a stored icon value (file ID, short name or full path).
+function D.IconTexture(v)
+    if type(v) == "string" and not v:find("[\\/]") then return "Interface\\Icons\\" .. v end
+    return v
+end
+
 ------------------------------------------------------------------ spells
 function D.SpellName(id)
     if not id then return nil end
