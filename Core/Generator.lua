@@ -5,19 +5,27 @@ local G = {}
 ns.Generator = G
 
 function G.ActionText(a)
-    if not a then return "" end
+    if not a or a.kind == "hole" then return "" end -- a hole blocks saving, see Storage.Save
     if a.kind == "slot" then return tostring(a.id or a.name or "") end
     local name = a.name or ""
     if a.kind == "spell" and a.rank and name ~= "" then
-        return name .. "(" .. (a.rankText or L.RANK_FORMAT:format(a.rank)) .. ")"
+        name = name .. "(" .. (a.rankText or L.RANK_FORMAT:format(a.rank)) .. ")"
     end
+    if a.noToggle and name ~= "" then name = "!" .. name end
     return name
 end
 
 -- Condition tokens for one branch, in a stable order.
 function G.CondTokens(b)
     local t = {}
-    if b.mod then t[#t + 1] = "mod:" .. b.mod end
+    if b.mod then
+        local keys, sep = U.ModList(b.mod)
+        if sep == "/" then
+            t[#t + 1] = "mod:" .. table.concat(keys, "/")
+        else
+            for _, k in ipairs(keys) do t[#t + 1] = "mod:" .. k end
+        end
+    end
     if b.unit then t[#t + 1] = "@" .. b.unit end
     if b.rel then t[#t + 1] = b.rel end
     -- A unit with no enemy/ally check still needs to exist, otherwise the
@@ -27,6 +35,12 @@ function G.CondTokens(b)
     if b.combat == true then t[#t + 1] = "combat" elseif b.combat == false then t[#t + 1] = "nocombat" end
     if b.stealth == true then t[#t + 1] = "stealth" elseif b.stealth == false then t[#t + 1] = "nostealth" end
     if b.form ~= nil then t[#t + 1] = "form:" .. b.form end
+    if b.noform ~= nil then t[#t + 1] = "noform:" .. b.noform end
+    if b.nomod == true then t[#t + 1] = "nomod" elseif b.nomod then t[#t + 1] = "nomod:" .. b.nomod end
+    if b.swim == true then t[#t + 1] = "swimming" elseif b.swim == false then t[#t + 1] = "noswimming" end
+    if b.outdoors == true then t[#t + 1] = "outdoors" elseif b.outdoors == false then t[#t + 1] = "indoors" end
+    if b.pet == true then t[#t + 1] = "pet" elseif b.pet == false then t[#t + 1] = "nopet" end
+    if b.button then t[#t + 1] = "button:" .. b.button end
     return t
 end
 
@@ -86,8 +100,20 @@ local function sequenceLine(line, sep)
     return out .. " " .. table.concat(names, sep == ";" and "," or ", ")
 end
 
+-- Conditions of a command line, or nil when it always runs.
+function G.CommandConds(line)
+    local conds = line.conds
+    if not conds or #conds == 0 then return nil end
+    if #conds == 1 and not U.HasConditions(conds[1]) and not conds[1].unit then return nil end
+    local parts = {}
+    for i, b in ipairs(conds) do parts[i] = G.Cond(b) end
+    return table.concat(parts)
+end
+
 local function commandLine(line)
     local s = "/" .. line.cmd
+    local c = G.CommandConds(line)
+    if c then s = s .. " " .. c end
     if line.cmd == "cancelaura" and line.action then s = s .. " " .. G.ActionText(line.action) end
     return s
 end

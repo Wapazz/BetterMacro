@@ -89,11 +89,37 @@ function D.SpellIdFromName(name)
     return info and info.spellID
 end
 
+-- Names of every spell in the player's spellbook, rebuilt when it changes
+-- (SPELLS_CHANGED, see Main.lua).
+local bookNames
+
+function D.InvalidateSpells()
+    bookNames = nil
+end
+
+local function spellbookNames()
+    if not bookNames then
+        bookNames = {}
+        for _, e in ipairs(D.ListSpells()) do bookNames[e.name] = true end
+    end
+    return bookNames
+end
+
+-- Templates and the catalog name a spell by its rank 1 ID. Asking the game
+-- about that exact ID is not enough: once a higher rank replaces it, or when
+-- the client uses other IDs, it answers "not known". So a spell also counts
+-- as known when a spell of the same name is in the spellbook.
 function D.IsKnown(id)
+    if not id then return false end
     if IsPlayerSpell and try(IsPlayerSpell, id) then return true end
     if C_SpellBook and C_SpellBook.IsSpellKnown and try(C_SpellBook.IsSpellKnown, id) then return true end
     if IsSpellKnown and try(IsSpellKnown, id) then return true end
-    return false
+    local name = D.SpellName(id)
+    return name ~= nil and spellbookNames()[name] == true
+end
+
+function D.IsKnownName(name)
+    return name ~= nil and (spellbookNames()[name] == true or D.SpellIdFromName(name) ~= nil)
 end
 
 function D.SpellAction(id)
@@ -263,8 +289,19 @@ function D.ListSlots()
 end
 
 ------------------------------------------------------------------ misc
+-- Icon shown on an empty slot that asks for a role
+local ROLE_ICON = {
+    help = "Interface\\Icons\\Spell_Holy_HolyBolt",
+    self = "Interface\\Icons\\Spell_Holy_WordFortitude",
+    harm = "Interface\\Icons\\Spell_Fire_FlameBolt",
+    alt = "Interface\\Icons\\INV_Misc_Book_09",
+    cc = "Interface\\Icons\\Spell_Nature_Polymorph",
+    interrupt = "Interface\\Icons\\Ability_Kick",
+}
+
 function D.Icon(a)
     if not a then return QUESTION end
+    if a.kind == "hole" then return ROLE_ICON[a.role] or QUESTION end
     if a.kind == "spell" then return D.SpellIcon(a.id or a.name) or QUESTION end
     if a.kind == "item" then return D.ItemIcon(a.id or D.ItemIdFromName(a.name)) or QUESTION end
     if a.kind == "slot" then
@@ -276,6 +313,7 @@ end
 function D.Label(a)
     if not a then return nil end
     if a.kind == "slot" then return D.SlotName(a.id) end
+    if a.kind == "hole" then return ns.U.cap(L["ROLE_" .. tostring(a.role)]) end
     return a.name
 end
 
@@ -301,6 +339,7 @@ end
 
 -- "help" | "harm" | nil
 function D.Nature(a)
+    if a and a.kind == "hole" then return ns.U.ROLE_NATURE[a.role] end
     if not a or a.kind ~= "spell" then return nil end
     local key = a.id or a.name
     if C_Spell then

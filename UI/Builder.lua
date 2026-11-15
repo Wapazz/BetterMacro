@@ -91,10 +91,11 @@ end
 local function actionSlot(ctx, parent, action, x, y, w, tab, set, emptyLabel)
     local ranked = ctx.macro.downrank and action and action.kind == "spell"
     local rankWidth = 72
+    local hole = U.IsHole(action)
     local b = pools.slot:Acquire()
     b:SetParent(parent)
     b:SetFrameLevel(parent:GetFrameLevel() + 2)
-    b:SetStyle(action and "action" or "off")
+    b:SetStyle((hole and "mod") or (action and "action") or "off")
     b:SetSize(ranked and (w - rankWidth - 4) or w, 20)
     b:SetPoint("TOPLEFT", x, -y)
     b.icon:SetTexture(D.Icon(action))
@@ -106,12 +107,48 @@ local function actionSlot(ctx, parent, action, x, y, w, tab, set, emptyLabel)
     b:SetScript("OnReceiveDrag", fromCursor)
     b:SetScript("OnClick", function(self, button)
         if ns.locked then return end
-        if button == "RightButton" then set(nil) return end
+        if button == "RightButton" then
+            -- Spell slots can also become a hole, so a template works for any class.
+            -- Not the tooltip slot (it has an empty label): empty already means "automatic".
+            if tab ~= "spell" or emptyLabel then set(nil) return end
+            local items = { { text = L.CLEAR, value = false } }
+            if action and action.kind == "spell" then
+                -- "!Spell": pressing again never turns an active aura or stance off
+                items[#items + 1] = { text = L.NO_TOGGLE_MENU, value = "!", checked = action.noToggle }
+            end
+            for _, role in ipairs(U.ROLES) do
+                items[#items + 1] = {
+                    text = L.MAKE_HOLE:format(L["ROLE_" .. role]),
+                    value = role,
+                    checked = hole and action.role == role,
+                }
+            end
+            W.OpenMenu(self, items, function(v)
+                if v == "!" then
+                    local changed = U.copy(action)
+                    changed.noToggle = not action.noToggle or nil
+                    set(changed)
+                else
+                    set(v and U.Hole(v) or nil)
+                end
+            end)
+            return
+        end
         if fromCursor() then return end
-        ctx.openPicker(self, tab, set)
+        ctx.openPicker(self, tab, set, hole and action.role or nil)
     end)
-    b:SetScript("OnEnter", nil)
-    b:SetScript("OnLeave", nil)
+    b:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if hole then
+            GameTooltip:SetText(D.Label(action), 1, 0.75, 0.3)
+            GameTooltip:AddLine(L.HOLE_TIP, 1, 1, 1, true)
+        else
+            GameTooltip:SetText(D.Label(action) or L.CHOOSE, 1, 1, 1)
+        end
+        GameTooltip:AddLine((tab == "spell" and not emptyLabel) and L.SLOT_TIP_SPELL or L.SLOT_TIP, 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     if ranked then
         local rank = flat(parent, action.rank and L.RANK_FORMAT:format(action.rank) or L.RANK_MAX, "plain", x + w - rankWidth, y, rankWidth)
         rank:SetWidth(rankWidth)
@@ -141,20 +178,26 @@ end
 -- Condition chips for a branch. Returns the y below the last chip row.
 local function chips(ctx, parent, b, x0, y, width, nature)
     local x = x0
-    local function add(label, style, onLeft, onRight)
+    -- menu = true: a left click opens a menu (onLeft(self)) that redraws by itself
+    local function add(label, style, onLeft, onRight, menu)
         local c = flat(parent, label, style, 0, 0)
         if x + c:GetWidth() > width and x > x0 then
             x = x0
             y = y + ROW
         end
         c:SetPoint("TOPLEFT", x, -y)
-        c:SetScript("OnClick", function(_, button)
+        c:SetScript("OnClick", function(self, button)
             if ns.locked then return end
-            if button == "RightButton" then onRight() else onLeft() end
-            ctx.changed()
+            if button == "RightButton" then
+                if onRight then onRight(); ctx.changed() end
+                return
+            end
+            onLeft(self)
+            if not menu then ctx.changed() end
         end)
         chipTip(c)
         x = x + c:GetWidth() + 4
+        return c
     end
 
     local relLabel = (b.rel == "harm" and L.CH_ENEMY) or (b.rel == "help" and L.CH_ALLY) or L.CH_REL
@@ -172,10 +215,22 @@ local function chips(ctx, parent, b, x0, y, width, nature)
         function() b.life = cycle({ false, "alive", "dead" }, b.life or false) or nil end,
         function() b.life = nil end)
 
+    -- Several keys can be combined; with two or more, a chip says whether all
+    -- of them must be held or any one of them is enough.
+    local held, sep = U.ModList(b.mod)
+    local isHeld = {}
+    for _, k in ipairs(held) do isHeld[k] = true end
     for _, m in ipairs(U.MODS) do
-        add(L["MOD_" .. m], b.mod == m and "mod" or "off",
-            function() b.mod = (b.mod ~= m) and m or nil end,
-            function() if b.mod == m then b.mod = nil end end)
+        add(L["MOD_" .. m], isHeld[m] and "mod" or "off",
+            function() b.mod = U.ToggleMod(b.mod, m) end,
+            function() if isHeld[m] then b.mod = U.ToggleMod(b.mod, m) end end)
+    end
+    if #held > 1 then
+        local join = add(sep == "/" and L.CH_MOD_ANY or L.CH_MOD_ALL, "mod",
+            function() b.mod = U.ModJoin(held, sep == "/" and "+" or "/") end)
+        join:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText(L.CH_MOD_JOIN_TIP, 1, 1, 1, 1, true); GameTooltip:Show()
+        end)
     end
 
     local combatLabel = (b.combat == true and L.CH_COMBAT) or (b.combat == false and L.CH_NOCOMBAT) or L.CH_COMBATQ
@@ -198,7 +253,47 @@ local function chips(ctx, parent, b, x0, y, width, nature)
         end,
         function() b.form = nil end)
 
+    -- Less common conditions: shown only once set, added from the "+" chip
+    local missing = {}
+    for _, def in ipairs(U.EXTRA_CONDS) do
+        local key = def.key
+        if b[key] ~= nil then
+            add(B.ExtraLabel(key, b[key]), "cond", function(self)
+                local items = {}
+                for _, v in ipairs(def.values) do
+                    items[#items + 1] = { text = B.ExtraLabel(key, v), value = v, checked = b[key] == v }
+                end
+                W.OpenMenu(self, items, function(v) b[key] = v; ctx.changed() end)
+            end, function() b[key] = nil end, true)
+        else
+            missing[#missing + 1] = def
+        end
+    end
+    if #missing > 0 then
+        local more = add(L.ADD_COND, "ghost", function(self)
+            local items = {}
+            for _, def in ipairs(missing) do
+                items[#items + 1] = { text = L["CHK_" .. def.key], value = def }
+            end
+            W.OpenMenu(self, items, function(def) b[def.key] = def.values[1]; ctx.changed() end)
+        end, nil, true)
+        more:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText(L.ADD_COND_TIP, 1, 1, 1, 1, true); GameTooltip:Show()
+        end)
+    end
+
     return y + ROW
+end
+
+-- Chip text of an extra condition value (see U.EXTRA_CONDS).
+function B.ExtraLabel(key, v)
+    if key == "nomod" then return v == true and L.CH_NOMOD or L.CH_NOMOD_KEY:format(L["MOD_" .. v]) end
+    if key == "noform" then return L.CH_NOT_FORM:format(v) end
+    if key == "swim" then return v and L.CH_SWIM or L.CH_NOSWIM end
+    if key == "outdoors" then return v and L.CH_OUTDOORS or L.CH_INDOORS end
+    if key == "pet" then return v and L.CH_PET or L.CH_NOPET end
+    if key == "button" then return L["CH_BUTTON_" .. v] end
+    return tostring(v)
 end
 
 local function unitMenu(ctx, owner, b)
@@ -362,6 +457,28 @@ end
 
 local function drawCommand(ctx, card, line, li, W_)
     local y = 30
+    -- Optional conditions: the command runs only when one of them matches
+    for j, b in ipairs(line.conds or {}) do
+        text(card, j == 1 and L.IF_W or L.ELSE_W, 8, y, "GameFontNormalSmall")
+        text(card, L.ON, 58, y, "GameFontDisableSmall")
+        local u = flat(card, L["UNITSHORT_" .. (b.unit or "target")], "plain", 80, y, 90)
+        u:SetScript("OnClick", function(self) if not ns.locked then unitMenu(ctx, self, b) end end)
+        iconBtn(card, "Interface\\Buttons\\UI-GroupLoot-Pass-Up", W_ - 24, y, L.REMOVE, function()
+            if ns.locked then return end
+            table.remove(line.conds, j)
+            if #line.conds == 0 then line.conds = nil end
+            ctx.changed()
+        end)
+        y = chips(ctx, card, b, 58, y + ROW, W_ - 8, nil) + 4
+    end
+    local addCond = flat(card, L.ADD_CMD_COND, "ghost", 54, y)
+    addCond:SetScript("OnClick", function()
+        if ns.locked then return end
+        line.conds = line.conds or {}
+        line.conds[#line.conds + 1] = {}
+        ctx.changed()
+    end)
+    y = y + ROW
     if line.cmd == "cancelaura" then
         actionSlot(ctx, card, line.action, 8, y, W_ - 16, "spell", function(a)
             line.action = a

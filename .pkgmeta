@@ -10,3 +10,4 @@ ignore:
   - tests
   - Media/BetterMacro-512.png
   - Tools
+  - IDEAS.md

@@ -18,6 +18,8 @@ Core\Parser.lua
 Core\Evaluator.lua
 Core\Data.lua
 Core\Templates.lua
+Core\Catalog.lua
+Core\CatalogImported.lua
 Core\Storage.lua
 Core\History.lua
 Core\Share.lua
@@ -27,6 +29,7 @@ UI\Picker.lua
 UI\IconPicker.lua
 UI\Builder.lua
 UI\ShareFrame.lua
+UI\CatalogFrame.lua
 UI\MainFrame.lua
 UI\Minimap.lua
 

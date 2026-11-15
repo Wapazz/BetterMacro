@@ -308,6 +308,13 @@ function MF.New(macro)
     ui.name:SetFocus()
 end
 
+-- Opens the editor on a new, unsaved macro built elsewhere (catalog, ...).
+function MF.OpenNew(macro, hint)
+    MF.Open()
+    MF.New(macro)
+    if hint then MF.Status(hint, 0.6, 0.8, 1) end
+end
+
 function MF.Duplicate()
     if ns.locked or not state.macro then return end
     commitFocus()
@@ -458,6 +465,8 @@ function MF.Share()
     if not state.macro then return end
     commitFocus()
     if #state.macro.lines == 0 then MF.Status(L.SHARE_EMPTY, 1, 0.75, 0.2) return end
+    -- A share code carries the macro text, which can't hold a hole
+    if U.HasHoles(state.macro) then MF.Status(L.SHARE_HOLES, 1, 0.75, 0.2) return end
     ns.ShareFrame.ShowExport(Sh.Encode(state.macro))
 end
 
@@ -511,7 +520,7 @@ local function iconSuggestions()
     local out = { { value = U.DEFAULT_ICON, texture = QUESTION_TEX, label = L.ICON_AUTO } }
     local seen = {}
     local function addAction(a)
-        if not a then return end
+        if not a or U.IsHole(a) then return end
         local ic = D.Icon(a)
         if ic and ic ~= 134400 and not seen[ic] then
             seen[ic] = true
@@ -845,8 +854,16 @@ local function createRight()
         local text = W.Text(content, "GameFontNormal", label)
         text:SetPoint("TOPLEFT", 0, y)
     end
-    title(L.TEMPLATES, 0)
-    local y = -20
+    -- Class catalog: ready-made macros for your class, explained
+    local catalog = W.Button(content, L.CATALOG, contentW, 24)
+    catalog:SetPoint("TOPLEFT", 0, 0)
+    catalog:SetScript("OnClick", function()
+        if ns.CatalogFrame then ns.CatalogFrame.Toggle() else MF.Status(L.RESTART_CATALOG, 1, 0.75, 0.2) end
+    end)
+    W.Tooltip(catalog, L.CATALOG, L.CATALOG_TIP)
+
+    title(L.TEMPLATES, -34)
+    local y = -54
     for i, t in ipairs(T.list) do
         local b = W.Flat(content)
         b:SetStyle("plain")
@@ -860,6 +877,8 @@ local function createRight()
             if ns.locked then return end
             MF.New(T.Build(i))
         end)
+        -- Preview: what the template would do for this character, without opening it
+        W.Tooltip(b, function() return L[t.key], T.ExplainText(T.Build(i)) end)
         y = y - 22
     end
 
@@ -905,8 +924,13 @@ local function createRight()
                 row.label:ClearAllPoints()
                 row.label:SetPoint("LEFT", 6, 0)
                 row.label:SetPoint("RIGHT", -4, 0)
+                W.Tooltip(row, function(self)
+                    if not self.template then return end
+                    return self.template.name, T.ExplainText(self.template) .. "\n\n|cff999999" .. L.TEMPLATE_ROW_TIP .. "|r"
+                end)
                 rows[i] = row
             end
+            row.template = template
             row:SetStyle("plain")
             row:SetSize(contentW, 20)
             row:SetPoint("TOPLEFT", 0, y - (i - 1) * 22)

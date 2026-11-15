@@ -49,10 +49,30 @@ local function render()
     empty:SetShown(#list == 0)
 end
 
+-- With a role (filling a hole), the class's spell for that role comes first,
+-- then the spells of the right nature (helpful / offensive), then the rest.
+local function sortForRole(list, role)
+    local U, T = ns.U, ns.Templates
+    local nature = U.ROLE_NATURE[role]
+    local suggested = T and T.RoleSpellName and T.RoleSpellName(role)
+    local rank = {}
+    for _, e in ipairs(list) do
+        if suggested and e.name == suggested then rank[e] = 0
+        elseif nature and D.Nature(e) == nature then rank[e] = 1
+        else rank[e] = 2 end
+    end
+    table.sort(list, function(a, b)
+        if rank[a] ~= rank[b] then return rank[a] < rank[b] end
+        return a.name < b.name
+    end)
+    return list
+end
+
 local function setTab(tab)
     current.tab = tab
     for k, t in pairs(tabs) do t:SetStyle(k == tab and "accent" or "off") end
-    if tab == "spell" then current.data = D.ListSpells()
+    if tab == "spell" and current.role then current.data = sortForRole(D.ListSpells(), current.role)
+    elseif tab == "spell" then current.data = D.ListSpells()
     elseif tab == "item" then current.data = D.ListItems()
     else current.data = D.ListSlots() end
     scroll:SetVerticalScroll(0)
@@ -109,11 +129,11 @@ local function create()
     frame:SetScript("OnMouseUp", drop)
 end
 
--- tab: "spell" | "item" | "slot"
-function Pk.Open(anchor, tab, cb)
+-- tab: "spell" | "item" | "slot". role: set when filling a hole (see U.ROLES).
+function Pk.Open(anchor, tab, cb, role)
     if not frame then create() end
     if ns.IconPicker then ns.IconPicker.Close() end
-    current.cb = cb
+    current.cb, current.role = cb, role
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
     search:SetText("")

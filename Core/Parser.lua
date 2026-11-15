@@ -31,10 +31,24 @@ local function parseToken(tok, b)
     if tok == "exists" then b._exists = true return true end
     if tok == "nodead" then b.life = "alive" return true end
     if tok == "dead" then b.life = "dead" return true end
-    local m = tok:match("^mod:(%a+)$") or tok:match("^modifier:(%a+)$")
+    -- "mod:alt" ; "mod:alt/ctrl" = any of them ; "mod:alt,mod:ctrl" = all of them
+    local m = tok:match("^mod:([%a/]+)$") or tok:match("^modifier:([%a/]+)$")
     if m then
-        if not MODS[m] or b.mod then return false end
-        b.mod = m
+        local keys = {}
+        for k in m:gmatch("[^/]+") do
+            if not MODS[k] then return false end
+            keys[#keys + 1] = k
+        end
+        if #keys == 0 then return false end
+        if #keys > 1 then
+            if b.mod then return false end -- "any" mixed with other keys: keep as raw text
+            b.mod = U.ModJoin(keys, "/")
+        else
+            if b.mod and b.mod:find("/", 1, true) then return false end
+            local held = U.ModList(b.mod)
+            held[#held + 1] = keys[1]
+            b.mod = U.ModJoin(held, "+")
+        end
         return true
     end
     if tok == "combat" then b.combat = true return true end
@@ -44,6 +58,23 @@ local function parseToken(tok, b)
     if tok == "noform" or tok == "nostance" then b.form = 0 return true end
     local f = tok:match("^form:(%d+)$") or tok:match("^stance:(%d+)$")
     if f then b.form = tonumber(f) return true end
+    local nf = tok:match("^noform:(%d+)$") or tok:match("^nostance:(%d+)$")
+    if nf then b.noform = tonumber(nf) return true end
+    if tok == "nomod" or tok == "nomodifier" then b.nomod = true return true end
+    local nm = tok:match("^nomod:(%a+)$") or tok:match("^nomodifier:(%a+)$")
+    if nm then
+        if not MODS[nm] then return false end
+        b.nomod = nm
+        return true
+    end
+    if tok == "swimming" then b.swim = true return true end
+    if tok == "noswimming" then b.swim = false return true end
+    if tok == "outdoors" then b.outdoors = true return true end
+    if tok == "indoors" then b.outdoors = false return true end
+    if tok == "pet" then b.pet = true return true end
+    if tok == "nopet" then b.pet = false return true end
+    local btn = tok:match("^button:(%d)$") or tok:match("^btn:(%d)$")
+    if btn then b.button = tonumber(btn) return true end
     return false
 end
 
@@ -71,12 +102,23 @@ local function splitClause(clause)
     return groups, clause
 end
 
+-- "!Spell" never turns an active aura or stance off: keep the flag on the action.
+local function resolveAction(text, cmd, resolve)
+    local bang = text:sub(1, 1) == "!"
+    if bang then text = U.trim(text:sub(2)) end
+    if text == "" then return nil end
+    local a = resolve(text, cmd)
+    if a and bang and a.kind ~= "slot" then a.noToggle = true end
+    return a
+end
+
 local function parseCast(cmd, rest, resolve)
     local line = { kind = "cast", cmd = cmd, branches = {} }
     for clause in (rest .. ";"):gmatch("([^;]*);") do
         local groups, actionText = splitClause(clause)
         if not groups or actionText == "" then return nil end
-        local action = resolve(actionText, cmd)
+        local action = resolveAction(actionText, cmd, resolve)
+        if not action then return nil end
         if #groups == 0 then groups = { "" } end
         for _, g in ipairs(groups) do
             local b = parseGroup(g)
@@ -110,9 +152,9 @@ local function parseSequence(rest, resolve)
         end
     end
     for rawStep in (after .. ","):gmatch("([^,]*),") do
-        local step = U.trim(rawStep)
-        if step == "" then return nil end
-        line.steps[#line.steps + 1] = resolve(step, "cast")
+        local step = resolveAction(U.trim(rawStep), "cast", resolve)
+        if not step then return nil end
+        line.steps[#line.steps + 1] = step
     end
     if #line.steps == 0 then return nil end
     return line
@@ -128,10 +170,21 @@ function P.ParseLine(text, resolve)
         line = parseCast(cmd, rest, resolve)
     elseif cmd == "castsequence" then
         line = parseSequence(rest, resolve)
-    elseif cmd == "cancelaura" and rest ~= "" and not rest:find("[%[;]") then
-        line = { kind = "command", cmd = "cancelaura", action = resolve(U.trim(rest), "cast") }
-    elseif SIMPLE[cmd] and rest == "" then
-        line = U.NewCommandLine(cmd)
+    elseif SIMPLE[cmd] and not rest:find(";", 1, true) then
+        -- "/cmd [a][b] arg": conditions are OR'ed; only /cancelaura takes an argument
+        local groups, arg = splitClause(rest)
+        if groups and ((cmd == "cancelaura") == (arg ~= "")) then
+            line = U.NewCommandLine(cmd)
+            if cmd == "cancelaura" then line.action = resolve(arg, "cast") end
+            if #groups > 0 then
+                line.conds = {}
+                for _, g in ipairs(groups) do
+                    local b = parseGroup(g)
+                    if not b then line = nil; break end
+                    line.conds[#line.conds + 1] = b
+                end
+            end
+        end
     end
     return line or U.NewRawLine(text)
 end
@@ -149,10 +202,13 @@ function P.Parse(body, resolve, name)
                 local word, rest = low:match("^(#%a+)%s*(.*)$")
                 if word == "#showtooltip" or word == "#show" then arg = U.trim(text:sub(#word + 1)) end
             end
-            -- "#showtooltip [conditions] X" can't be expressed with blocks: kept as raw text
-            if arg and not arg:find("[%[;]") then
+            if arg then
+                -- "#showtooltip [conditions] A; B" becomes the automatic tooltip,
+                -- which already follows whatever the macro is about to cast.
                 macro.showtooltip = true
-                if arg ~= "" then macro.tooltipAction = (resolve or defaultResolve)(arg, "cast") end
+                if arg ~= "" and not arg:find("[%[;]") then
+                    macro.tooltipAction = (resolve or defaultResolve)(arg, "cast")
+                end
             else
                 macro.lines[#macro.lines + 1] = P.ParseLine(text, resolve)
             end

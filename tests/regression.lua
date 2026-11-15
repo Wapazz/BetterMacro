@@ -80,4 +80,32 @@ assert(not S.ResolveIdentity(identity))
 slots = {}
 assert(not S.ResolveIdentity(identity))
 
-print("OK: branch order, moved indices, duplicate names and stale identities")
+-- A hole (slot left for the player to fill) never reaches the game.
+local holed = U.NewMacro("Holed")
+holed.showtooltip = false
+holed.lines = { { kind = "cast", cmd = "cast", branches = { { action = U.Hole("help") } } } }
+assert(U.HasHoles(holed))
+assert(G.Build(holed) == "/cast ")
+local count = #slots
+local holeIndex, holeErr = S.Save(holed, nil)
+assert(not holeIndex and holeErr == ns.L.ERR_HOLES and #slots == count)
+holed.lines[1].branches[1].action = { kind = "spell", name = "Heal" }
+assert(not U.HasHoles(holed))
+
+-- Extra conditions, "!" and conditional commands survive a parse/build round trip.
+local P = ns.Parser
+local function roundTrip(text) return G.LineText(P.ParseLine(text)) end
+assert(roundTrip("/petattack [@mouseover,harm,nodead][]") == "/petattack [@mouseover,harm,nodead][]")
+assert(roundTrip("/cancelaura [mod:shift] Slow Fall") == "/cancelaura [mod:shift] Slow Fall")
+assert(roundTrip("/cast [nostance:1,nomod:shift,swimming,nopet,button:2] !Stealth")
+    == "/cast [noform:1,nomod:shift,swimming,nopet,button:2] !Stealth")
+assert(roundTrip("/cast [outdoors] Travel Form; Cat Form") == "/cast [outdoors] Travel Form; Cat Form")
+-- Several modifier keys: all held ("mod:alt,mod:ctrl") or any of them ("mod:alt/ctrl").
+assert(roundTrip("/cast [mod:ctrl,mod:alt] Blink") == "/cast [mod:alt,mod:ctrl] Blink")
+assert(P.ParseLine("/cast [mod:ctrl,mod:alt] Blink").branches[1].mod == "alt+ctrl")
+assert(roundTrip("/cast [mod:alt/ctrl] Blink") == "/cast [mod:alt/ctrl] Blink")
+assert(U.ToggleMod("alt+ctrl", "alt") == "ctrl" and U.ToggleMod("alt/ctrl", "shift") == "shift/alt/ctrl")
+local tipped = P.Parse("#showtooltip [mod:shift] Thorns; Mark of the Wild\n/cast Thorns")
+assert(tipped.showtooltip and not tipped.tooltipAction and #tipped.lines == 1)
+
+print("OK: branch order, moved indices, duplicate names, stale identities, holes and conditions")

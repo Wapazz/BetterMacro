@@ -9,17 +9,40 @@ local function unitName(unit)
 end
 
 local function actionName(a, opts)
+    if a and a.kind == "hole" then return L["ROLE_" .. tostring(a.role)] end
     if not a or not a.name or a.name == "" then
         if a and a.kind == "slot" and a.id then return tostring(a.id) end
         return L.MISSING_ACTION
     end
+    if a.noToggle then return a.name .. L.NO_TOGGLE end
     return a.name
+end
+
+-- "If X or Y, <does the command>": a command line with conditions.
+local function commandText(line, t)
+    local conds = line.conds or {}
+    if not ns.Generator.CommandConds(line) then return t end
+    local before, catchAll = {}, false
+    for _, b in ipairs(conds) do
+        if U.HasConditions(b) then before[#before + 1] = E.CondPhrase(b) else catchAll = true; break end
+    end
+    if #before == 0 then return t end
+    local lowered = t:gsub("^%u", string.lower)
+    if catchAll then
+        return t .. L.CMD_PREFER:format(U.joinAnd(before, L.OR))
+    end
+    return U.cap(L.IF:format(U.joinAnd(before, L.OR)) .. lowered)
 end
 
 -- "you hold Shift and the unit under your mouse is a living enemy"
 function E.CondPhrase(b)
     local p = {}
-    if b.mod then p[#p + 1] = L.C_HOLD:format(L["MOD_" .. b.mod]) end
+    if b.mod then
+        local keys, sep = U.ModList(b.mod)
+        local names = {}
+        for i, k in ipairs(keys) do names[i] = L["MOD_" .. k] end
+        p[#p + 1] = L.C_HOLD:format(U.joinAnd(names, sep == "/" and L.OR or L.AND))
+    end
     if b.rel or b.life or (b.unit and b.unit ~= "player") then
         local u = unitName(b.unit)
         local f
@@ -35,6 +58,13 @@ function E.CondPhrase(b)
     if b.combat == true then p[#p + 1] = L.C_COMBAT elseif b.combat == false then p[#p + 1] = L.C_NOCOMBAT end
     if b.stealth == true then p[#p + 1] = L.C_STEALTH elseif b.stealth == false then p[#p + 1] = L.C_NOSTEALTH end
     if b.form ~= nil then p[#p + 1] = (b.form == 0) and L.C_NOFORM or L.C_FORM:format(b.form) end
+    if b.noform ~= nil then p[#p + 1] = L.C_NOT_FORM:format(b.noform) end
+    if b.nomod == true then p[#p + 1] = L.C_NOMOD
+    elseif b.nomod then p[#p + 1] = L.C_NOMOD_KEY:format(L["MOD_" .. b.nomod]) end
+    if b.swim == true then p[#p + 1] = L.C_SWIM elseif b.swim == false then p[#p + 1] = L.C_NOSWIM end
+    if b.outdoors == true then p[#p + 1] = L.C_OUTDOORS elseif b.outdoors == false then p[#p + 1] = L.C_INDOORS end
+    if b.pet == true then p[#p + 1] = L.C_PET elseif b.pet == false then p[#p + 1] = L.C_NOPET end
+    if b.button then p[#p + 1] = L.C_BUTTON:format(L["BUTTON_" .. b.button] or tostring(b.button)) end
     return U.joinAnd(p, L.AND)
 end
 
@@ -72,7 +102,10 @@ local function explainCast(line, li, opts, items, warnings)
         if unreachable then text = text .. L.UNREACHABLE end
         items[#items + 1] = { kind = "branch", line = li, branch = j, text = text .. ".", unreachable = unreachable }
 
-        if not b.action or (b.action.kind ~= "slot" and (b.action.name or "") == "") then missing = true end
+        -- Holes have their own warning (W_HOLES), they are not "nothing chosen"
+        if not b.action or (b.action.kind ~= "slot" and b.action.kind ~= "hole" and (b.action.name or "") == "") then
+            missing = true
+        end
         if not catchAt and U.IsCatchAll(b) then catchAt = j end
 
         local isSpell = b.action and b.action.kind == "spell"
@@ -161,11 +194,12 @@ function E.Explain(macro, opts)
             else
                 t = L["CMD_" .. line.cmd]
             end
-            items[#items + 1] = { kind = "branch", line = li, text = t }
+            items[#items + 1] = { kind = "branch", line = li, text = commandText(line, t) }
         else
             items[#items + 1] = { kind = "branch", line = li, text = L.RAW:format(line.text or "") }
         end
     end
+    if U.HasHoles(macro) then table.insert(warnings, 1, L.W_HOLES) end
     if casts > 1 then warnings[#warnings + 1] = L.W_MULTI_CAST end
     if opts.text and #opts.text > 255 then warnings[#warnings + 1] = L.W_TOO_LONG:format(#opts.text) end
     if opts.checkName and U.trim(macro.name) == "" then warnings[#warnings + 1] = L.W_NO_NAME end

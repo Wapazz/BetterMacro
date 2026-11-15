@@ -40,11 +40,12 @@ end
 
 local ev = CreateFrame("Frame")
 local loggedIn = false
-ev:RegisterEvent("ADDON_LOADED")
-ev:RegisterEvent("PLAYER_LOGIN")
-ev:RegisterEvent("UPDATE_MACROS")
-ev:RegisterEvent("PLAYER_REGEN_DISABLED")
-ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+-- Event names differ between clients, and registering one the client doesn't
+-- know raises an error that would stop this whole file (and /bm with it).
+for _, name in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "UPDATE_MACROS",
+    "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "SPELLS_CHANGED", "LEARNED_SPELL_IN_TAB" }) do
+    pcall(ev.RegisterEvent, ev, name)
+end
 ev:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON then
@@ -64,9 +65,32 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         ns.MainFrame.SetLocked(true)
     elseif event == "PLAYER_REGEN_ENABLED" then
         ns.MainFrame.SetLocked(false)
+    elseif event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB" then
+        ns.Data.InvalidateSpells()
+        if ns.CatalogFrame and ns.CatalogFrame.Refresh then ns.CatalogFrame.Refresh() end
     end
 end)
 
 SLASH_BETTERMACRO1 = "/bm"
 SLASH_BETTERMACRO2 = "/bettermacro"
-SlashCmdList.BETTERMACRO = function() ns.MainFrame.Toggle() end
+-- Errors are printed in the chat: with Lua errors hidden (the default), a
+-- failing window would otherwise just not open, with no clue why.
+local function report(err)
+    print("|cffff5555BetterMacro:|r " .. tostring(err))
+end
+
+SlashCmdList.BETTERMACRO = function(msg)
+    msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if not ns.MainFrame then
+        report("UI/MainFrame.lua did not load. Restart the game; if it stays, type /console scriptErrors 1 then /reload to see the error.")
+        return
+    end
+    local ok, err = pcall(function()
+        if (msg == "catalog" or msg == "catalogue") and ns.CatalogFrame then
+            ns.CatalogFrame.Toggle()
+        else
+            ns.MainFrame.Toggle()
+        end
+    end)
+    if not ok then report(err) end
+end

@@ -162,6 +162,7 @@ function S.Save(macro, index)
     if InCombatLockdown and InCombatLockdown() then return nil, L.ERR_COMBAT end
     local name = U.trim(macro.name)
     if name == "" then return nil, L.ERR_NAME end
+    if U.HasHoles(macro) then return nil, L.ERR_HOLES end
     local body = G.Build(macro)
     if #body > 255 then return nil, L.ERR_LONG end
 

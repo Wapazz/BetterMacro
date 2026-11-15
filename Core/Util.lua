@@ -41,10 +41,46 @@ end
 --        | { kind = "raw",      text = "..." }
 -- branch = { unit = nil|"mouseover"|"player"|"focus"|"targettarget"|"pet",
 --            rel = nil|"help"|"harm", life = nil|"alive"|"dead",
---            mod = nil|"shift"|"alt"|"ctrl", combat = nil|true|false,
---            stealth = nil|true|false, form = nil|number, action = action|nil }
--- action = { kind = "spell"|"item"|"slot", name = string, id = number|nil }
+--            mod = nil|"shift"|"alt"|"ctrl"|"alt+ctrl" (all held)|"alt/ctrl" (any held),
+--            combat = nil|true|false,
+--            stealth = nil|true|false, form = nil|number, action = action|nil,
+--            -- extra conditions (U.EXTRA_CONDS), shown only when set:
+--            nomod = nil|true|"shift"|"alt"|"ctrl", noform = nil|number,
+--            swim = nil|true|false, outdoors = nil|true|false (false = indoors),
+--            pet = nil|true|false, button = nil|1|2|3 }
+-- A command line can carry conditions too: line.conds = { branch* } (no action), OR'ed.
+-- action = { kind = "spell"|"item"|"slot", name = string, id = number|nil,
+--            noToggle = true|nil -- "!Spell": never turns an active aura/stance off }
+--        | { kind = "hole", role = U.ROLES[i] }  -- left for the player to fill
 --------------------------------------------------------------------------
+
+-- Roles a hole can ask for. "help"/"self" are helpful, the others offensive.
+U.ROLES = { "help", "harm", "alt", "cc", "interrupt", "self" }
+U.ROLE_NATURE = { help = "help", self = "help", harm = "harm", alt = "harm", cc = "harm", interrupt = "harm" }
+
+function U.Hole(role)
+    return { kind = "hole", role = role or "harm" }
+end
+
+function U.IsHole(a)
+    return a ~= nil and a.kind == "hole"
+end
+
+-- Calls fn(action) for every action of the macro (tooltip, branches, steps, aura).
+function U.EachAction(macro, fn)
+    if macro.tooltipAction then fn(macro.tooltipAction) end
+    for _, line in ipairs(macro.lines or {}) do
+        for _, b in ipairs(line.branches or {}) do if b.action then fn(b.action) end end
+        for _, a in ipairs(line.steps or {}) do fn(a) end
+        if line.action then fn(line.action) end
+    end
+end
+
+function U.HasHoles(macro)
+    local found = false
+    U.EachAction(macro, function(a) if a.kind == "hole" then found = true end end)
+    return found
+end
 
 U.DEFAULT_ICON = "INV_MISC_QUESTIONMARK"
 
@@ -87,12 +123,56 @@ end
 
 U.UNITS = { false, "mouseover", "player", "focus", "targettarget", "pet" } -- false = my target
 U.COMMANDS = { "startattack", "stopattack", "stopcasting", "cleartarget", "targetenemy",
-    "petattack", "petfollow", "dismount", "cancelform", "cancelaura" }
+    "petattack", "petfollow", "petpassive", "dismount", "cancelform", "cancelaura" }
 U.MODS = { "shift", "alt", "ctrl" }
+
+-- Modifier keys of a branch. b.mod holds one key, or several joined with
+-- "+" (all must be held) or "/" (any of them). Returns the keys and the joiner.
+function U.ModList(mod)
+    if not mod then return {}, "+" end
+    local sep = mod:find("/", 1, true) and "/" or "+"
+    local keys = {}
+    for k in mod:gmatch("[^+/]+") do keys[#keys + 1] = k end
+    return keys, sep
+end
+
+-- Keys in a stable order (shift, alt, ctrl), joined; nil when there are none.
+function U.ModJoin(keys, sep)
+    local set = {}
+    for _, k in ipairs(keys) do set[k] = true end
+    local out = {}
+    for _, k in ipairs(U.MODS) do if set[k] then out[#out + 1] = k end end
+    if #out == 0 then return nil end
+    return table.concat(out, sep or "+")
+end
+
+-- Adds the key if it is missing, removes it otherwise.
+function U.ToggleMod(mod, key)
+    local keys, sep = U.ModList(mod)
+    local out, found = {}, false
+    for _, k in ipairs(keys) do
+        if k == key then found = true else out[#out + 1] = k end
+    end
+    if not found then out[#out + 1] = key end
+    return U.ModJoin(out, sep)
+end
+
+-- Less common conditions: each has the values it can take, the first being
+-- the one set when the player adds it.
+U.EXTRA_CONDS = {
+    { key = "nomod", values = { true, "shift", "alt", "ctrl" } },
+    { key = "noform", values = { 1, 2, 3, 4, 5, 6 } },
+    { key = "swim", values = { true, false } },
+    { key = "outdoors", values = { true, false } },
+    { key = "pet", values = { true, false } },
+    { key = "button", values = { 2, 1, 3 } },
+}
 
 function U.HasConditions(b)
     return (b.unit and b.unit ~= "player") or b.rel or b.life or b.mod
         or b.combat ~= nil or b.stealth ~= nil or b.form ~= nil
+        or b.nomod ~= nil or b.noform ~= nil or b.swim ~= nil
+        or b.outdoors ~= nil or b.pet ~= nil or b.button ~= nil
 end
 
 -- A branch that always matches: the ones after it can never be reached.
