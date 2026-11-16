@@ -851,10 +851,63 @@ local function createRight()
     scroll:SetPoint("TOPLEFT", x, -32)
     local content = scroll.content
     local contentW = w - 26
-    local function title(label, y)
-        local text = W.Text(content, "GameFontNormal", label)
-        text:SetPoint("TOPLEFT", 0, y)
+
+    -- Sections (templates, commands, my templates) fold under their title.
+    -- Folded sections are remembered in BetterMacroDB.panelFolded.
+    local sections = {}
+    local function folded()
+        if not BetterMacroDB then return {} end
+        BetterMacroDB.panelFolded = BetterMacroDB.panelFolded or {}
+        return BetterMacroDB.panelFolded
     end
+    local layout
+    local function section(key, label)
+        local s = { key = key, items = {} }
+        local h = CreateFrame("Button", nil, content)
+        h:SetSize(contentW, 18)
+        h.arrow = h:CreateTexture(nil, "ARTWORK")
+        h.arrow:SetSize(12, 12)
+        h.arrow:SetPoint("LEFT", 0, 0)
+        h.text = W.Text(h, "GameFontNormal", label)
+        h.text:SetPoint("LEFT", h.arrow, "RIGHT", 4, 0)
+        h:SetScript("OnEnter", function() h.text:SetTextColor(1, 1, 1) end)
+        h:SetScript("OnLeave", function() h.text:SetTextColor(1, 0.82, 0) end)
+        h:SetScript("OnClick", function()
+            local fd = folded()
+            fd[key] = not fd[key] or nil
+            layout()
+        end)
+        s.header = h
+        sections[#sections + 1] = s
+        return s
+    end
+    -- item = { frame, height taken }
+    local function add(s, frame, height) s.items[#s.items + 1] = { frame, height or 22 } end
+    layout = function()
+        local fd = folded()
+        local y = -34 -- under the catalog button
+        for _, s in ipairs(sections) do
+            local closed = fd[s.key]
+            s.header:ClearAllPoints()
+            s.header:SetPoint("TOPLEFT", 0, y)
+            s.header.arrow:SetTexture(closed and "Interface\\Buttons\\UI-PlusButton-Up" or "Interface\\Buttons\\UI-MinusButton-Up")
+            y = y - 22
+            for _, it in ipairs(s.items) do
+                local frame, height = it[1], it[2]
+                if closed then
+                    frame:Hide()
+                else
+                    frame:ClearAllPoints()
+                    frame:SetPoint("TOPLEFT", 0, y)
+                    frame:Show()
+                    y = y - height
+                end
+            end
+            y = y - 10
+        end
+        content:SetHeight(math.max(scrollH, -y + 8))
+    end
+
     -- Macro catalog: ready-made macros for your class, explained
     local catalog = W.Button(content, L.CATALOG, contentW, 24)
     catalog:SetPoint("TOPLEFT", 0, 0)
@@ -863,8 +916,7 @@ local function createRight()
     end)
     W.Tooltip(catalog, L.CATALOG, L.CATALOG_TIP)
 
-    title(L.TEMPLATES, -34)
-    local y = -54
+    local tplSection = section("templates", L.TEMPLATES)
     for i, t in ipairs(T.list) do
         local b = W.Flat(content)
         b:SetStyle("plain")
@@ -873,19 +925,16 @@ local function createRight()
         b.label:SetPoint("LEFT", 6, 0)
         b.label:SetPoint("RIGHT", -4, 0)
         b:SetSize(contentW, 20)
-        b:SetPoint("TOPLEFT", 0, y)
         b:SetScript("OnClick", function()
             if ns.locked then return end
             MF.New(T.Build(i))
         end)
         -- Preview: what the template would do for this character, without opening it
         W.Tooltip(b, function() return L[t.key], T.ExplainText(T.Build(i)) end)
-        y = y - 22
+        add(tplSection, b)
     end
 
-    y = y - 12
-    title(L.BLOCKS, y)
-    y = y - 20
+    local cmdSection = section("commands", L.BLOCKS)
     local blocks = {
         { L.K_CAST, function() return U.NewCastLine("cast") end },
         { L.K_USE, function() return U.NewCastLine("use") end },
@@ -903,21 +952,18 @@ local function createRight()
         b.label:ClearAllPoints()
         b.label:SetPoint("LEFT", 6, 0)
         b:SetSize(contentW, 20)
-        b:SetPoint("TOPLEFT", 0, y)
         b:SetScript("OnClick", function() MF.AddLine(def[2]()) end)
-        y = y - 22
+        add(cmdSection, b)
     end
 
-    y = y - 12
-    title(L.MY_TEMPLATES, y)
-    y = y - 20
+    local mySection = section("mytemplates", L.MY_TEMPLATES)
     local save = W.Button(content, L.SAVE_TEMPLATE, contentW, 22)
-    save:SetPoint("TOPLEFT", 0, y)
     save:SetScript("OnClick", saveTemplate)
-    y = y - 26
     local rows = {}
     ui.refreshTemplates = function()
         for _, row in ipairs(rows) do row:Hide() end
+        mySection.items = {}
+        add(mySection, save, 26)
         local templates = S.Templates()
         for i, template in ipairs(templates) do
             local row = rows[i]
@@ -935,7 +981,6 @@ local function createRight()
             row.template = template
             row:SetStyle("plain")
             row:SetSize(contentW, 20)
-            row:SetPoint("TOPLEFT", 0, y - (i - 1) * 22)
             row:SetLabel(template.name, false)
             row:SetScript("OnClick", function(_, button)
                 if ns.locked then return end
@@ -945,9 +990,9 @@ local function createRight()
                     MF.New(U.copy(template))
                 end
             end)
-            row:Show()
+            add(mySection, row)
         end
-        content:SetHeight(math.max(scrollH, -y + #templates * 22 + 8))
+        layout() -- shows the rows unless the section is folded
     end
     ui.refreshTemplates()
 end

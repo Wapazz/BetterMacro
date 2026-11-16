@@ -10,6 +10,8 @@
 ### Changed
 
 - The class catalog is now called the **macro catalog**, since it also holds macros for every class.
+- In the right panel, "Blocks" is now called "Commands", and every section (templates, commands, my templates) folds when you click its title. The game remembers which ones are folded.
+- In a block, "If" and "Else" now sit in front of the conditions instead of the spell.
 - "Spell ranks" is now on by default, so every spell shows its rank picker. Items (`/use`, `/equip`) never show one. The macro still uses the highest rank until you pick another one. Untick it to hide the pickers.
 
 ## 1.2.1
