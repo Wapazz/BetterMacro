@@ -264,6 +264,44 @@ function D.ListItems()
     return out
 end
 
+-- For /equip: what you wear (first, with its slot), then what your bags hold
+-- that can be worn. Equipped items are items here, not slot numbers.
+function D.ListEquippable()
+    local out, seen = {}, {}
+    for slot = 1, 19 do
+        local id = GetInventoryItemID and GetInventoryItemID("player", slot)
+        local name = id and D.ItemName(id)
+        if name and not seen[id] then
+            seen[id] = true
+            out[#out + 1] = {
+                kind = "item", id = id, name = name,
+                label = name .. "  |cff888888(" .. L.EQUIPPED_ON:format(D.SlotName(slot)) .. ")|r",
+                icon = GetInventoryItemTexture and GetInventoryItemTexture("player", slot),
+            }
+        end
+    end
+    local bagItems = {}
+    local equippable = (C_Item and C_Item.IsEquippableItem) or IsEquippableItem
+    if C_Container and equippable then
+        for bag = 0, (NUM_BAG_SLOTS or 4) do
+            for slot = 1, try(C_Container.GetContainerNumSlots, bag) or 0 do
+                local info = try(C_Container.GetContainerItemInfo, bag, slot)
+                local id = info and info.itemID
+                if id and not seen[id] and try(equippable, id) then
+                    local name = D.ItemName(id) or (info.hyperlink and info.hyperlink:match("%[(.-)%]"))
+                    if name then
+                        seen[id] = true
+                        bagItems[#bagItems + 1] = { kind = "item", id = id, name = name, icon = info.iconFileID or D.ItemIcon(id) }
+                    end
+                end
+            end
+        end
+    end
+    table.sort(bagItems, function(a, b) return a.name < b.name end)
+    for _, e in ipairs(bagItems) do out[#out + 1] = e end
+    return out
+end
+
 function D.ListSlots()
     local out = {}
     for slot = 1, 19 do
@@ -353,6 +391,8 @@ end
 
 -- Used by the parser to turn a name from macro text into an action.
 function D.Resolve(name, cmd)
+    -- /equip only takes item names
+    if cmd == "equip" then return { kind = "item", id = D.ItemIdFromName(name), name = name } end
     local base, rankText = name:match("^(.-)%s*%(([^()]*)%)$")
     local rank = rankText and (rankText:match("^[Rr]ank%s*(%d+)$") or rankText:match("^[Rr]ang%s*(%d+)$"))
     if rank and base ~= "" then

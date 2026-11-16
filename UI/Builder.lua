@@ -333,13 +333,18 @@ local function drawCast(ctx, card, line, li, W_, live)
         highlights[li][j] = hl
 
         text(card, j == 1 and L.IF_W or L.ELSE_W, 8, y, "GameFontNormalSmall")
-        text(card, L.ON, 58, y, "GameFontDisableSmall")
-        local u = flat(card, L["UNITSHORT_" .. (b.unit or "target")], "plain", 80, y, 90)
-        u:SetScript("OnClick", function(self) if not ns.locked then unitMenu(ctx, self, b) end end)
-        local slotX = 80 + u:GetWidth() + 6
+        -- /equip has no target: no "on [unit]"
+        local slotX = 58
+        if line.cmd ~= "equip" then
+            text(card, L.ON, 58, y, "GameFontDisableSmall")
+            local u = flat(card, L["UNITSHORT_" .. (b.unit or "target")], "plain", 80, y, 90)
+            u:SetScript("OnClick", function(self) if not ns.locked then unitMenu(ctx, self, b) end end)
+            slotX = 80 + u:GetWidth() + 6
+        end
         local n = #line.branches
         local slotW = W_ - slotX - (n > 1 and 70 or 10)
-        actionSlot(ctx, card, b.action, slotX, y, slotW, line.cmd == "use" and "item" or "spell", setAction(ctx, b))
+        local tab = (line.cmd == "use" and "item") or (line.cmd == "equip" and "equip") or "spell"
+        actionSlot(ctx, card, b.action, slotX, y, slotW, tab, setAction(ctx, b))
         if n > 1 then
             -- Reorder branches: the order is the order the game tries them in
             local br = line.branches
@@ -539,7 +544,8 @@ end
 
 local function header(ctx, card, line, li, W_, count)
     local label
-    if line.kind == "cast" then label = (line.cmd == "use") and L.K_USE or L.K_CAST
+    if line.kind == "cast" then
+        label = (line.cmd == "use" and L.K_USE) or (line.cmd == "equip" and L.K_EQUIP) or L.K_CAST
     elseif line.kind == "command" then label = L["CMDNAME_" .. line.cmd]
     else label = L[KIND_LABEL[line.kind]] end
     local h = flat(card, label, (line.kind == "cast" or line.kind == "command") and "plain" or "off", 6, 6)
@@ -551,7 +557,13 @@ local function header(ctx, card, line, li, W_, count)
             W.OpenMenu(self, {
                 { text = L.K_CAST, value = "cast", checked = line.cmd == "cast" },
                 { text = L.K_USE, value = "use", checked = line.cmd == "use" },
-            }, function(v) line.cmd = v; ctx.changed() end)
+                { text = L.K_EQUIP, value = "equip", checked = line.cmd == "equip" },
+            }, function(v)
+                line.cmd = v
+                -- Equipping has no target
+                if v == "equip" then for _, b in ipairs(line.branches) do b.unit = nil end end
+                ctx.changed()
+            end)
         end)
     elseif line.kind == "command" then
         h:SetScript("OnClick", function(self)

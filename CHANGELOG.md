@@ -4,6 +4,7 @@
 
 ### New
 
+- **"Equip an item" block.** `/equip` is no longer raw text: it works like "Use an item", with cases and conditions (`/equip [mod:shift] Shield; Staff`). Its picker lists what you are wearing first, with the slot, then everything in your bags that you can equip.
 - **"Common" section in the catalog**, after the classes, for macros every class can use: both trinkets, weapon stones, wizard and mana oils, Healthstone or potion, bandage on mouseover, skull on the target, focus on mouseover, and setting your role for the dungeon finder.
 
 ### Changed

@@ -748,6 +748,7 @@ local function addLineMenu(owner)
     local items = {
         { text = L.K_CAST, value = function() return U.NewCastLine("cast") end },
         { text = L.K_USE, value = function() return U.NewCastLine("use") end },
+        { text = L.K_EQUIP, value = function() return U.NewCastLine("equip") end },
         { text = L.K_SEQ, value = U.NewSequenceLine },
         { text = L.K_CMD, value = function() return U.NewCommandLine("startattack") end },
         { text = L.K_RAW, value = function() return U.NewRawLine("") end },
@@ -888,6 +889,7 @@ local function createRight()
     local blocks = {
         { L.K_CAST, function() return U.NewCastLine("cast") end },
         { L.K_USE, function() return U.NewCastLine("use") end },
+        { L.K_EQUIP, function() return U.NewCastLine("equip") end },
         { L.K_SEQ, U.NewSequenceLine },
         { L.K_RAW, function() return U.NewRawLine("") end },
     }

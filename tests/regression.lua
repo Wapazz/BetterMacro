@@ -121,6 +121,11 @@ assert(fol.branches[2].action.name == "Flash of Light(Rank 1)" and fol.branches[
 -- Compact text: no spaces, keys held together in one token.
 assert(G.LineText(fol, true) == "/cast [mod:shiftalt,@player][mod:shift,help]Flash of Light(Rank 1);[mod:alt,@player][help]Flash of Light(Rank 3)")
 assert(G.LineText(P.ParseLine(G.LineText(fol, true)), true) == G.LineText(fol, true))
+-- /equip is a block like /use, with cases and conditions.
+local eqLine = P.ParseLine("/equip [mod:shift] Shield of Thorns; Rod of Healing")
+assert(eqLine.kind == "cast" and eqLine.cmd == "equip" and #eqLine.branches == 2)
+assert(eqLine.branches[1].action.kind == "item")
+assert(G.LineText(eqLine) == "/equip [mod:shift] Shield of Thorns; Rod of Healing")
 assert(U.ToggleMod("alt+ctrl", "alt") == "ctrl" and U.ToggleMod("alt/ctrl", "shift") == "shift/alt/ctrl")
 local tipped = P.Parse("#showtooltip [mod:shift] Thorns; Mark of the Wild\n/cast Thorns")
 assert(tipped.showtooltip and not tipped.tooltipAction and #tipped.lines == 1)

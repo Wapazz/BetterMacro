@@ -78,6 +78,7 @@ local function actionPhrase(cmd, b, opts)
     local name = actionName(a, opts)
     -- The unit was already named in the condition: "... cast X on it"
     local named = b.unit and b.unit ~= "player"
+    if cmd == "equip" then return L.A_EQUIP:format(name) end
     if cmd == "use" then
         if not b.unit then return L.A_USE:format(name) end
         return named and L.A_USE_IT:format(name) or L.A_USE_ON:format(name, unitName(b.unit))

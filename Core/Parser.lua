@@ -14,7 +14,7 @@ for _, c in ipairs(U.COMMANDS) do SIMPLE[c] = true end
 local function defaultResolve(name, cmd)
     local n = tonumber(name)
     if n then return { kind = "slot", id = n, name = tostring(n) } end
-    return { kind = (cmd == "use") and "item" or "spell", name = name }
+    return { kind = (cmd == "use" or cmd == "equip") and "item" or "spell", name = name }
 end
 
 -- "shiftalt" -> { "shift", "alt" }; nil if it isn't only modifier names.
@@ -199,7 +199,7 @@ function P.ParseLine(text, resolve)
     if not cmd then return U.NewRawLine(text) end
     cmd = cmd:lower()
     local line
-    if cmd == "cast" or cmd == "use" then
+    if cmd == "cast" or cmd == "use" or cmd == "equip" then
         line = parseCast(cmd, rest, resolve)
     elseif cmd == "castsequence" then
         line = parseSequence(rest, resolve)

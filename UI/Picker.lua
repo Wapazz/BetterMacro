@@ -74,6 +74,7 @@ local function setTab(tab)
     if tab == "spell" and current.role then current.data = sortForRole(D.ListSpells(), current.role)
     elseif tab == "spell" then current.data = D.ListSpells()
     elseif tab == "item" then current.data = D.ListItems()
+    elseif tab == "equip" then current.data = D.ListEquippable()
     else current.data = D.ListSlots() end
     scroll:SetVerticalScroll(0)
     render()
@@ -102,6 +103,12 @@ local function create()
         tabs[def[1]] = t
         x = x + t:GetWidth() + 4
     end
+    -- /equip has its own list and shows only this tab
+    local eq = W.Flat(frame)
+    eq:SetLabel(L.TAB_EQUIP, 70)
+    eq:SetPoint("TOPLEFT", 8, -8)
+    eq:SetScript("OnClick", function() setTab("equip") end)
+    tabs.equip = eq
 
     search = W.Edit(frame, 270, 20)
     search:SetPoint("TOPLEFT", 14, -34)
@@ -129,9 +136,10 @@ local function create()
     frame:SetScript("OnMouseUp", drop)
 end
 
--- tab: "spell" | "item" | "slot". role: set when filling a hole (see U.ROLES).
+-- tab: "spell" | "item" | "slot" | "equip". role: set when filling a hole (see U.ROLES).
 function Pk.Open(anchor, tab, cb, role)
     if not frame then create() end
+    for k, t in pairs(tabs) do t:SetShown((k == "equip") == (tab == "equip")) end
     if ns.IconPicker then ns.IconPicker.Close() end
     current.cb, current.role = cb, role
     frame:ClearAllPoints()
