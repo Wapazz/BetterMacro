@@ -89,7 +89,9 @@ end
 -- Action slot: shows the chosen spell/item; click opens the picker, drop accepts
 -- a spell or item from the cursor, right-click clears.
 local function actionSlot(ctx, parent, action, x, y, w, tab, set, emptyLabel)
-    local ranked = ctx.macro.downrank ~= false and action -- on unless turned off and action.kind == "spell"
+    -- Ranks: on unless turned off, and only for spells (never /use or /equip,
+    -- whose item names can also match a spell name)
+    local ranked = ctx.macro.downrank ~= false and tab == "spell" and action and action.kind == "spell"
     local rankWidth = 72
     local hole = U.IsHole(action)
     local b = pools.slot:Acquire()
@@ -332,7 +334,7 @@ local function drawCast(ctx, card, line, li, W_, live)
         highlights[li] = highlights[li] or {}
         highlights[li][j] = hl
 
-        text(card, j == 1 and L.IF_W or L.ELSE_W, 8, y, "GameFontNormalSmall")
+        text(card, j == 1 and L.IF_W or L.ELSE_W, 8, y + ROW, "GameFontNormalSmall") -- in front of the conditions
         -- /equip has no target: no "on [unit]"
         local slotX = 58
         if line.cmd ~= "equip" then
@@ -464,7 +466,7 @@ local function drawCommand(ctx, card, line, li, W_)
     local y = 30
     -- Optional conditions: the command runs only when one of them matches
     for j, b in ipairs(line.conds or {}) do
-        text(card, j == 1 and L.IF_W or L.ELSE_W, 8, y, "GameFontNormalSmall")
+        text(card, j == 1 and L.IF_W or L.ELSE_W, 8, y + ROW, "GameFontNormalSmall") -- in front of the conditions
         text(card, L.ON, 58, y, "GameFontDisableSmall")
         local u = flat(card, L["UNITSHORT_" .. (b.unit or "target")], "plain", 80, y, 90)
         u:SetScript("OnClick", function(self) if not ns.locked then unitMenu(ctx, self, b) end end)

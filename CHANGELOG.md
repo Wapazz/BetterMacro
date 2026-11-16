@@ -10,7 +10,7 @@
 ### Changed
 
 - The class catalog is now called the **macro catalog**, since it also holds macros for every class.
-- "Spell ranks" is now on by default, so every spell shows its rank picker. The macro still uses the highest rank until you pick another one. Untick it to hide the pickers.
+- "Spell ranks" is now on by default, so every spell shows its rank picker. Items (`/use`, `/equip`) never show one. The macro still uses the highest rank until you pick another one. Untick it to hide the pickers.
 
 ## 1.2.1
 
