@@ -1,5 +1,14 @@
 # BetterMacro
 
+## 1.2.1
+
+### Fixed
+
+- Modifier keys written together, such as `[mod:shiftalt]`, are now understood. Before, the whole line was kept as raw text.
+- A missing `;` between two cases (`Spell A [mod:alt] Spell B`) no longer turns everything after it into the spell name. The `;` is added back.
+- When cases that follow each other cast the same spell, they now share it in the macro text (`[a][b] Spell; [c] Other`). Macros stay shorter and further from the 255-character limit.
+- "Compress" now also removes the space before each spell and writes keys held together as one condition (`[mod:shiftalt]Spell;Other`).
+
 ## 1.2.0
 
 ### New

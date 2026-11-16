@@ -17,6 +17,21 @@ local function defaultResolve(name, cmd)
     return { kind = (cmd == "use") and "item" or "spell", name = name }
 end
 
+-- "shiftalt" -> { "shift", "alt" }; nil if it isn't only modifier names.
+local function splitMods(word)
+    local keys = {}
+    while word ~= "" do
+        local found
+        for k in pairs(MODS) do
+            if word:sub(1, #k) == k then found = k break end
+        end
+        if not found then return nil end
+        keys[#keys + 1] = found
+        word = word:sub(#found + 1)
+    end
+    return keys
+end
+
 local function parseToken(tok, b)
     tok = tok:lower():gsub("%s+", "")
     if tok == "" then return true end
@@ -31,22 +46,29 @@ local function parseToken(tok, b)
     if tok == "exists" then b._exists = true return true end
     if tok == "nodead" then b.life = "alive" return true end
     if tok == "dead" then b.life = "dead" return true end
-    -- "mod:alt" ; "mod:alt/ctrl" = any of them ; "mod:alt,mod:ctrl" = all of them
+    -- "mod:alt" ; "mod:alt/ctrl" = any of them ;
+    -- "mod:alt,mod:ctrl" or "mod:altctrl" = all of them
     local m = tok:match("^mod:([%a/]+)$") or tok:match("^modifier:([%a/]+)$")
     if m then
         local keys = {}
-        for k in m:gmatch("[^/]+") do
-            if not MODS[k] then return false end
-            keys[#keys + 1] = k
-        end
+        for k in m:gmatch("[^/]+") do keys[#keys + 1] = k end
         if #keys == 0 then return false end
         if #keys > 1 then
+            for _, k in ipairs(keys) do
+                if not MODS[k] then return false end -- "shiftalt/ctrl" can't be shown as blocks
+            end
             if b.mod then return false end -- "any" mixed with other keys: keep as raw text
             b.mod = U.ModJoin(keys, "/")
         else
+            local combo = splitMods(keys[1])
+            if not combo then return false end
             if b.mod and b.mod:find("/", 1, true) then return false end
             local held = U.ModList(b.mod)
-            held[#held + 1] = keys[1]
+            for _, k in ipairs(combo) do
+                local dup = false
+                for _, h in ipairs(held) do if h == k then dup = true end end
+                if not dup then held[#held + 1] = k end
+            end
             b.mod = U.ModJoin(held, "+")
         end
         return true
@@ -114,9 +136,20 @@ end
 
 local function parseCast(cmd, rest, resolve)
     local line = { kind = "cast", cmd = cmd, branches = {} }
-    for clause in (rest .. ";"):gmatch("([^;]*);") do
-        local groups, actionText = splitClause(clause)
+    local clauses = {}
+    for clause in (rest .. ";"):gmatch("([^;]*);") do clauses[#clauses + 1] = clause end
+    local ci = 1
+    while ci <= #clauses do
+        local groups, actionText = splitClause(clauses[ci])
         if not groups or actionText == "" then return nil end
+        -- A missing ";" ("A [mod:alt] B"): no spell name has "[", so cut there.
+        local cut = actionText:find("[", 1, true)
+        if cut then
+            table.insert(clauses, ci + 1, actionText:sub(cut))
+            actionText = U.trim(actionText:sub(1, cut - 1))
+            if actionText == "" then return nil end
+        end
+        ci = ci + 1
         local action = resolveAction(actionText, cmd, resolve)
         if not action then return nil end
         if #groups == 0 then groups = { "" } end

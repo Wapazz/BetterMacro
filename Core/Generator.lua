@@ -16,12 +16,15 @@ function G.ActionText(a)
 end
 
 -- Condition tokens for one branch, in a stable order.
-function G.CondTokens(b)
+-- compact writes keys held together as one token: "mod:shiftalt".
+function G.CondTokens(b, compact)
     local t = {}
     if b.mod then
         local keys, sep = U.ModList(b.mod)
         if sep == "/" then
             t[#t + 1] = "mod:" .. table.concat(keys, "/")
+        elseif compact then
+            t[#t + 1] = "mod:" .. table.concat(keys)
         else
             for _, k in ipairs(keys) do t[#t + 1] = "mod:" .. k end
         end
@@ -44,37 +47,37 @@ function G.CondTokens(b)
     return t
 end
 
-function G.Cond(b)
-    return "[" .. table.concat(G.CondTokens(b), ",") .. "]"
+function G.Cond(b, compact)
+    return "[" .. table.concat(G.CondTokens(b, compact), ",") .. "]"
 end
 
-local function castLine(line, sep)
+-- compact: "[a][b]SpellA;SpellB" instead of "[a][b] SpellA; SpellB".
+local function castLine(line, compact)
+    local sep = compact and ";" or "; "
     local br = line.branches or {}
     local cmd = "/" .. (line.cmd or "cast")
     if #br == 0 then return cmd end
     if #br == 1 and not U.HasConditions(br[1]) and not br[1].unit then
         return cmd .. " " .. G.ActionText(br[1].action)
     end
-    -- Same action everywhere: /cast [a][b][c] Spell
-    local same = true
-    local first = G.ActionText(br[1].action)
-    for i = 2, #br do
-        if G.ActionText(br[i].action) ~= first then same = false break end
-    end
-    if same then
-        local conds = {}
-        for i, b in ipairs(br) do conds[i] = G.Cond(b) end
-        return cmd .. " " .. table.concat(conds) .. " " .. first
-    end
-    -- Different actions: /cast [a] SpellA; [b] SpellB; SpellC
+    -- Branches that follow each other with the same action share it:
+    -- /cast [a][b] SpellA; [c] SpellB; SpellC
     local parts = {}
-    for i, b in ipairs(br) do
-        local c = G.Cond(b)
-        if c == "[]" then
-            parts[i] = G.ActionText(b.action)
-        else
-            parts[i] = c .. " " .. G.ActionText(b.action)
+    local i = 1
+    while i <= #br do
+        local action = G.ActionText(br[i].action)
+        local conds = {}
+        local j = i
+        while j <= #br and G.ActionText(br[j].action) == action do
+            conds[#conds + 1] = G.Cond(br[j], compact)
+            j = j + 1
         end
+        if #conds == 1 and conds[1] == "[]" then
+            parts[#parts + 1] = action
+        else
+            parts[#parts + 1] = table.concat(conds) .. (compact and "" or " ") .. action
+        end
+        i = j
     end
     return cmd .. " " .. table.concat(parts, sep)
 end
@@ -91,7 +94,7 @@ end
 
 local function sequenceLine(line, sep)
     local out = "/castsequence"
-    local c = G.Cond(line.branch or {})
+    local c = G.Cond(line.branch or {}, sep == ";")
     if c ~= "[]" then out = out .. " " .. c end
     local r = resetText(line.reset or {})
     if r then out = out .. " " .. r end
@@ -101,18 +104,18 @@ local function sequenceLine(line, sep)
 end
 
 -- Conditions of a command line, or nil when it always runs.
-function G.CommandConds(line)
+function G.CommandConds(line, compact)
     local conds = line.conds
     if not conds or #conds == 0 then return nil end
     if #conds == 1 and not U.HasConditions(conds[1]) and not conds[1].unit then return nil end
     local parts = {}
-    for i, b in ipairs(conds) do parts[i] = G.Cond(b) end
+    for i, b in ipairs(conds) do parts[i] = G.Cond(b, compact) end
     return table.concat(parts)
 end
 
-local function commandLine(line)
+local function commandLine(line, compact)
     local s = "/" .. line.cmd
-    local c = G.CommandConds(line)
+    local c = G.CommandConds(line, compact)
     if c then s = s .. " " .. c end
     if line.cmd == "cancelaura" and line.action then s = s .. " " .. G.ActionText(line.action) end
     return s
@@ -120,9 +123,9 @@ end
 
 function G.LineText(line, compact)
     local sep = compact and ";" or "; "
-    if line.kind == "cast" then return castLine(line, sep) end
+    if line.kind == "cast" then return castLine(line, compact) end
     if line.kind == "sequence" then return sequenceLine(line, sep) end
-    if line.kind == "command" then return commandLine(line) end
+    if line.kind == "command" then return commandLine(line, compact) end
     return line.text or ""
 end
 

@@ -104,6 +104,23 @@ assert(roundTrip("/cast [outdoors] Travel Form; Cat Form") == "/cast [outdoors] 
 assert(roundTrip("/cast [mod:ctrl,mod:alt] Blink") == "/cast [mod:alt,mod:ctrl] Blink")
 assert(P.ParseLine("/cast [mod:ctrl,mod:alt] Blink").branches[1].mod == "alt+ctrl")
 assert(roundTrip("/cast [mod:alt/ctrl] Blink") == "/cast [mod:alt/ctrl] Blink")
+-- Keys written together ("mod:shiftalt") mean all of them held.
+assert(P.ParseLine("/cast [mod:shiftalt,@player] Heal").branches[1].mod == "shift+alt")
+assert(P.ParseLine("/cast [mod:ctrlshift,mod:shift] Heal").branches[1].mod == "shift+ctrl")
+assert(P.ParseLine("/cast [mod:shiftalt/ctrl] Heal").kind == "raw")
+local ht = P.ParseLine("/cast [mod:shiftalt,@player][mod:shift,@mouseover,help,nodead][mod:shift,help,nodead] Healing Touch; "
+    .. "[mod:alt,@player][@mouseover,help,nodead][help,nodead] Healing Touch(Rank 4)")
+assert(ht.kind == "cast" and #ht.branches == 6)
+assert(G.LineText(ht) == "/cast [mod:shift,mod:alt,@player][mod:shift,@mouseover,help,nodead][mod:shift,help,nodead] Healing Touch; "
+    .. "[mod:alt,@player][@mouseover,help,nodead][help,nodead] Healing Touch(Rank 4)")
+assert(roundTrip("/cast [mod:shift] A; [mod:alt] B; [mod:ctrl] B; A") == "/cast [mod:shift] A; [mod:alt][mod:ctrl] B; A")
+-- A missing ";" before a condition still splits the cases.
+local fol = P.ParseLine("/cast [mod:shiftalt,@player][mod:shift,help] Flash of Light(Rank 1) [mod:alt,@player][help] Flash of Light(Rank 3)")
+assert(fol.kind == "cast" and #fol.branches == 4)
+assert(fol.branches[2].action.name == "Flash of Light(Rank 1)" and fol.branches[3].action.name == "Flash of Light(Rank 3)")
+-- Compact text: no spaces, keys held together in one token.
+assert(G.LineText(fol, true) == "/cast [mod:shiftalt,@player][mod:shift,help]Flash of Light(Rank 1);[mod:alt,@player][help]Flash of Light(Rank 3)")
+assert(G.LineText(P.ParseLine(G.LineText(fol, true)), true) == G.LineText(fol, true))
 assert(U.ToggleMod("alt+ctrl", "alt") == "ctrl" and U.ToggleMod("alt/ctrl", "shift") == "shift/alt/ctrl")
 local tipped = P.Parse("#showtooltip [mod:shift] Thorns; Mark of the Wild\n/cast Thorns")
 assert(tipped.showtooltip and not tipped.tooltipAction and #tipped.lines == 1)
