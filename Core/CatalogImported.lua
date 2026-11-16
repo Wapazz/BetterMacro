@@ -238,7 +238,7 @@ add("CW_ROG_ESCAPE", "ROGUE", "utility", { "solo", "pvp" }, [==[
 #showtooltip
 /cast {s5277|Evasion}
 /cast {s2983|Sprint}]==])
-add("CW_ROG_TRINKETS", "ROGUE", "dps", { "group", "pvp" }, [==[
+add("CW_ROG_TRINKETS", "COMMON", "dps", { "group", "pvp" }, [==[
 #showtooltip
 /use 13
 /use 14]==])
@@ -247,7 +247,7 @@ add("CW_ROG_POISON", "ROGUE", "utility", { "solo", "group" }, [==[
 /use [mod:shift] {i2892|Deadly Poison}; {i6947|Instant Poison}
 /use [mod:alt] 17; 16
 /click StaticPopup1Button1]==])
-add("CW_ROG_STONE", "ROGUE", "utility", { "solo", "group" }, [==[
+add("CW_ROG_STONE", "COMMON", "utility", { "solo", "group" }, [==[
 #showtooltip
 /use [mod:shift] {i3241|Heavy Weightstone}; {i2871|Heavy Sharpening Stone}
 /use [mod:alt] 17; 16
@@ -369,10 +369,6 @@ add("CW_WAR_HS_CLEAVE", "WARRIOR", "dps", { "solo", "group" }, [==[
 #showtooltip
 /startattack
 /cast [mod:shift] {s845|Cleave}; {s78|Heroic Strike}]==])
-add("CW_WAR_TRINKETS", "WARRIOR", "dps", { "group", "pvp" }, [==[
-#showtooltip
-/use 13
-/use 14]==])
 add("CW_WAR_RAGE", "WARRIOR", "dps", { "group" }, [==[
 #showtooltip
 /cast {s2687|Bloodrage}

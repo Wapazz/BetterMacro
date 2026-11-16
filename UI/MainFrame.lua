@@ -255,7 +255,7 @@ function MF.Refresh()
     ui.tooltipCheck:SetChecked(m.showtooltip and true or false)
     ui.scopeG:SetStyle(m.perChar and "off" or "accent")
     ui.scopeC:SetStyle(m.perChar and "accent" or "off")
-    ui.rankCheck:SetChecked(m.downrank and true or false)
+    ui.rankCheck:SetChecked(m.downrank ~= false) -- on unless turned off
     ui.icon:SetNormalTexture(iconTexture(m))
 
     ns.Builder.Render(ui.builderScroll.content, {
@@ -716,7 +716,7 @@ local function createHeader()
     ui.rankCheck = W.Check(hp, L.RANK_TITLE)
     ui.rankCheck:SetPoint("LEFT", ui.tooltipCheck.text, "RIGHT", 14, 0)
     ui.rankCheck:SetScript("OnClick", function(self)
-        if ns.locked then self:SetChecked(state.macro.downrank); return end
+        if ns.locked then self:SetChecked(state.macro.downrank ~= false); return end
         state.macro.downrank = self:GetChecked() and true or false
         MF.Refresh()
     end)
@@ -854,7 +854,7 @@ local function createRight()
         local text = W.Text(content, "GameFontNormal", label)
         text:SetPoint("TOPLEFT", 0, y)
     end
-    -- Class catalog: ready-made macros for your class, explained
+    -- Macro catalog: ready-made macros for your class, explained
     local catalog = W.Button(content, L.CATALOG, contentW, 24)
     catalog:SetPoint("TOPLEFT", 0, 0)
     catalog:SetScript("OnClick", function()

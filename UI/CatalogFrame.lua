@@ -1,7 +1,7 @@
 local _, ns = ...
 local W, D, T, C, L = ns.W, ns.Data, ns.Templates, ns.Catalog, ns.L
 
--- Class catalog. It takes the place of the editor inside the main window:
+-- Macro catalog. It takes the place of the editor inside the main window:
 -- class bar and filters on top, macro cards on the left, the selected macro on
 -- the right. "Use this macro" goes back to the editor with it as a new,
 -- unsaved macro; "Back to the editor" just goes back.
@@ -37,11 +37,13 @@ local function favorites()
 end
 
 local function className(cls)
+    if cls == C.COMMON then return L.CAT_COMMON end
     local names = LOCALIZED_CLASS_NAMES_MALE or {}
     return names[cls] or cls
 end
 
 local function classColor(cls)
+    if cls == C.COMMON then return 0.85, 0.78, 0.62 end
     local c = RAID_CLASS_COLORS and RAID_CLASS_COLORS[cls]
     if c then return c.r, c.g, c.b end
     return 0.9, 0.9, 0.9
@@ -49,7 +51,10 @@ end
 
 local function setClassIcon(tex, cls)
     local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[cls]
-    if coords then
+    if cls == C.COMMON then
+        tex:SetTexture(C.COMMON_ICON)
+        tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    elseif coords then
         tex:SetTexture(CLASS_TEX)
         tex:SetTexCoord(unpack(coords))
     else
@@ -291,7 +296,11 @@ local function create(main)
     ui.allClasses:SetPoint("TOPLEFT", 16, -50)
     ui.classButtons = {}
     local x = 16 + ui.allClasses:GetWidth() + 10
-    for _, cls in ipairs(C.CLASSES) do
+    local buttons = {}
+    for _, cls in ipairs(C.CLASSES) do buttons[#buttons + 1] = cls end
+    buttons[#buttons + 1] = C.COMMON
+    for _, cls in ipairs(buttons) do
+        if cls == C.COMMON then x = x + 14 end -- a small gap sets "Common" apart
         local b = CreateFrame("Button", nil, f)
         b:SetSize(36, 36)
         b:SetPoint("TOPLEFT", x, -42)
@@ -307,6 +316,7 @@ local function create(main)
         b:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:SetText(className(cls), classColor(cls))
+            if cls == C.COMMON then GameTooltip:AddLine(L.CAT_COMMON_TIP, 1, 1, 1, true) end
             GameTooltip:Show()
         end)
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)

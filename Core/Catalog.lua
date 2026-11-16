@@ -1,7 +1,7 @@
 local _, ns = ...
 local U, D, T, L = ns.U, ns.Data, ns.Templates, ns.L
 
--- Class catalog: ready-made macros per class, explained and checked against
+-- Macro catalog: ready-made macros per class, explained and checked against
 -- the spellbook. Each entry builds its blocks with the same pieces as the
 -- templates, so a spell not learned yet shows up as a hole.
 --
@@ -14,6 +14,9 @@ local C = {}
 ns.Catalog = C
 
 C.CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+-- Macros for every class (trinkets, weapon stones, role...) use this as their class.
+C.COMMON = "COMMON"
+C.COMMON_ICON = "Interface\\Icons\\INV_Misc_Bag_08"
 C.ROLES = { "heal", "tank", "dps", "utility" }
 C.TAGS = { "group", "solo", "pvp", "pet" }
 
@@ -182,6 +185,33 @@ C.list = {
 -- fallback when the ID is unknown (0) or the game doesn't know it.
 local TOKEN = "{([si])(%d+)|([^}]+)}"
 
+-- Our own macros for every class. icon: for entries with no spell or item.
+local function common(id, role, tags, text, icon)
+    C.list[#C.list + 1] = { id = id, class = C.COMMON, role = role, tags = tags, text = text, icon = icon }
+end
+
+common("COM_ROLE", "utility", { "group" }, [==[
+/run UnitSetRole("player", IsShiftKeyDown() and "TANK" or IsAltKeyDown() and "HEALER" or "DAMAGER")]==],
+    "Interface\\Icons\\INV_Banner_02")
+common("COM_OIL", "utility", { "solo", "group" }, [==[
+#showtooltip
+/use [mod:shift] {i20748|Brilliant Mana Oil}; {i20749|Brilliant Wizard Oil}
+/use [mod:alt] 17; 16
+/click StaticPopup1Button1]==])
+common("COM_POTION", "heal", { "solo", "group", "pvp" }, [==[
+#showtooltip
+/use [mod:shift] {i13446|Major Healing Potion}; {i9421|Major Healthstone}]==])
+common("COM_BANDAGE", "heal", { "solo", "group" }, [==[
+#showtooltip
+/use [@mouseover,help,nodead][help,nodead][@player] {i14530|Heavy Runecloth Bandage}]==])
+common("COM_SKULL", "utility", { "group" }, [==[
+/run SetRaidTarget("target", IsShiftKeyDown() and 0 or 8)]==],
+    "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8")
+common("COM_FOCUS", "utility", { "group", "pvp" }, [==[
+/clearfocus [mod:shift]
+/focus [nomod:shift,@mouseover,exists][nomod:shift]]==],
+    "Interface\\Icons\\Ability_Hunter_SniperShot")
+
 local function tokens(e)
     if e._tokens then return e._tokens end
     local out = {}
@@ -253,6 +283,7 @@ end
 function C.Usable(e) return #C.Missing(e) == 0 end
 
 function C.Icon(e)
+    if e.icon then return e.icon end
     if e.text then
         for _, t in ipairs(tokens(e)) do
             local ic = (t.kind == "s") and D.SpellIcon(t.id > 0 and t.id or t.name) or D.ItemIcon(t.id)

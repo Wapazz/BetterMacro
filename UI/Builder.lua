@@ -89,7 +89,7 @@ end
 -- Action slot: shows the chosen spell/item; click opens the picker, drop accepts
 -- a spell or item from the cursor, right-click clears.
 local function actionSlot(ctx, parent, action, x, y, w, tab, set, emptyLabel)
-    local ranked = ctx.macro.downrank and action and action.kind == "spell"
+    local ranked = ctx.macro.downrank ~= false and action -- on unless turned off and action.kind == "spell"
     local rankWidth = 72
     local hole = U.IsHole(action)
     local b = pools.slot:Acquire()

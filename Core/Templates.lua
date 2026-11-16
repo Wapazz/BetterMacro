@@ -1,7 +1,7 @@
 local _, ns = ...
 local U, D = ns.U, ns.Data
 
--- Templates and the building blocks shared with the class catalog
+-- Templates and the building blocks shared with the macro catalog
 -- (Core/Catalog.lua). A spell the character doesn't know becomes a hole: an
 -- orange slot that says which kind of spell to put there.
 local T = {}

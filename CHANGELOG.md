@@ -1,5 +1,16 @@
 # BetterMacro
 
+## 1.2.2
+
+### New
+
+- **"Common" section in the catalog**, after the classes, for macros every class can use: both trinkets, weapon stones, wizard and mana oils, Healthstone or potion, bandage on mouseover, skull on the target, focus on mouseover, and setting your role for the dungeon finder.
+
+### Changed
+
+- The class catalog is now called the **macro catalog**, since it also holds macros for every class.
+- "Spell ranks" is now on by default, so every spell shows its rank picker. The macro still uses the highest rank until you pick another one. Untick it to hide the pickers.
+
 ## 1.2.1
 
 ### Fixed
