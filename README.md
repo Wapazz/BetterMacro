@@ -55,7 +55,7 @@ Every block is a line of your macro. Pick a spell or an item by searching for it
 
 ## Commands
 
-`/bm` or `/bettermacro` opens and closes the window. `/bm catalog` opens the class catalog.
+`/bm` or `/bettermacro` opens and closes the window. `/bm catalog` opens the macro catalog.
 
 ## Project structure
 
@@ -72,7 +72,7 @@ Every block is a line of your macro. Pick a spell or an item by searching for it
 
 ### Credits
 
-Part of the class catalog (`Core/CatalogImported.lua`) is adapted from the macros published on
+Part of the macro catalog (`Core/CatalogImported.lua`) is adapted from the macros published on
 [classicwowforever.com](https://classicwowforever.com/fr/macros/) under the
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) licence. Changes: spell and item names
 replaced by IDs so the macros work in every client language, our own names, reworded chat message.

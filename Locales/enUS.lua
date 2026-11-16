@@ -286,9 +286,9 @@ L.TEMPLATE_ROW_TIP = "Click to open, right-click to delete."
 L.RESTART_NEEDED_GENERIC = "Restart the game (not just /reload) to load this part of BetterMacro."
 L.RESTART_CATALOG = L.RESTART_NEEDED_GENERIC
 
--- Class catalog
-L.CATALOG = "Class catalog"
-L.CATALOG_TIP = "Ready-made macros for your class, explained before you use them. Also: /bm catalog"
+-- Macro catalog
+L.CATALOG = "Macro catalog"
+L.CATALOG_TIP = "Ready-made macros for your class and for everyone, explained before you use them. Also: /bm catalog"
 L.CAT_ALL_CLASSES = "All classes"
 L.CAT_ALL_ROLES = "All roles"
 L.CAT_ALL_TAGS = "All situations"
@@ -547,7 +547,6 @@ L.CAT_CW_WAR_VICTORY = "Attack + Victory Rush"
 L.CAT_CW_WAR_BERSERK = "Berserker Rage, right stance"
 L.CAT_CW_WAR_EXECUTE = "Execute, Shift = on mouseover"
 L.CAT_CW_WAR_HS_CLEAVE = "Heroic Strike, Shift = Cleave"
-L.CAT_CW_WAR_TRINKETS = "Both trinkets"
 L.CAT_CW_WAR_RAGE = "Bloodrage + Rage Potion"
 L.CAT_CW_WAR_SHOUTS = "Battle Shout, Shift = Demoralizing"
 L.CATD_DRU_MOTW_MO = "Buffs the ally under your mouse, else your friendly target, else yourself."
