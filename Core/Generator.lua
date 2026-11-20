@@ -33,7 +33,11 @@ function G.CondTokens(b, compact)
     if b.rel then t[#t + 1] = b.rel end
     -- A unit with no enemy/ally check still needs to exist, otherwise the
     -- branch matches an empty unit and the macro never reaches the fallback.
-    if b.unit and b.unit ~= "player" and not b.rel then t[#t + 1] = "exists" end
+    if b.exists == true or (b.exists == nil and b.unit and not U.IsSelfUnit(b.unit) and not b.rel) then
+        t[#t + 1] = "exists"
+    elseif b.exists == false then
+        t[#t + 1] = "noexists"
+    end
     if b.life == "alive" then t[#t + 1] = "nodead" elseif b.life == "dead" then t[#t + 1] = "dead" end
     if b.combat == true then t[#t + 1] = "combat" elseif b.combat == false then t[#t + 1] = "nocombat" end
     if b.stealth == true then t[#t + 1] = "stealth" elseif b.stealth == false then t[#t + 1] = "nostealth" end
@@ -42,8 +46,16 @@ function G.CondTokens(b, compact)
     if b.nomod == true then t[#t + 1] = "nomod" elseif b.nomod then t[#t + 1] = "nomod:" .. b.nomod end
     if b.swim == true then t[#t + 1] = "swimming" elseif b.swim == false then t[#t + 1] = "noswimming" end
     if b.outdoors == true then t[#t + 1] = "outdoors" elseif b.outdoors == false then t[#t + 1] = "indoors" end
-    if b.pet == true then t[#t + 1] = "pet" elseif b.pet == false then t[#t + 1] = "nopet" end
+    if b.pet == true then t[#t + 1] = "pet"
+    elseif b.pet == false then t[#t + 1] = "nopet"
+    elseif b.pet then t[#t + 1] = "pet:" .. b.pet end
     if b.button then t[#t + 1] = "button:" .. b.button end
+    if b.channel == true then t[#t + 1] = "channeling" elseif b.channel == false then t[#t + 1] = "nochanneling" end
+    if b.mounted == true then t[#t + 1] = "mounted" elseif b.mounted == false then t[#t + 1] = "nomounted" end
+    if b.group == true then t[#t + 1] = "group"
+    elseif b.group == false then t[#t + 1] = "nogroup"
+    elseif b.group then t[#t + 1] = "group:" .. b.group end
+    if b.equipped then t[#t + 1] = "equipped:" .. b.equipped end
     return t
 end
 
@@ -93,10 +105,10 @@ local function resetText(r)
 end
 
 local function sequenceLine(line, sep)
-    local out = "/castsequence"
+    local out = line.random and ("/" .. line.random .. "random") or "/castsequence"
     local c = G.Cond(line.branch or {}, sep == ";")
     if c ~= "[]" then out = out .. " " .. c end
-    local r = resetText(line.reset or {})
+    local r = not line.random and resetText(line.reset or {})
     if r then out = out .. " " .. r end
     local names = {}
     for i, a in ipairs(line.steps or {}) do names[i] = G.ActionText(a) end

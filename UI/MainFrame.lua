@@ -73,6 +73,18 @@ function MF.RefreshList()
 
     local list = state.otherCharacter and S.CharacterMacros(state.otherCharacter)
         or ((state.scope == "character") and character or general)
+    local query = ui.listSearch and U.trim(ui.listSearch:GetText()):lower() or ""
+    if query ~= "" then
+        local kept = {}
+        for _, m in ipairs(list) do
+            -- Snapshots of other characters hold models, not text
+            local body = m.body or (m.lines and G.Build(m)) or ""
+            if (m.name or ""):lower():find(query, 1, true) or body:lower():find(query, 1, true) then
+                kept[#kept + 1] = m
+            end
+        end
+        list = kept
+    end
     ui.otherLabel:SetText(state.otherCharacter or L.OTHER_CHARACTERS)
     local content = ui.listScroll.content
     for _, r in ipairs(ui.listRows) do r:Hide() end
@@ -102,6 +114,7 @@ function MF.RefreshList()
         r:Show()
     end
     content:SetHeight(math.max(10, #list * 22))
+    ui.listEmpty:SetText(query ~= "" and L.LIST_NO_MATCH or L.EMPTY_LIST)
     ui.listEmpty:SetShown(#list == 0)
 end
 
@@ -176,8 +189,8 @@ function MF.UpdateLiveText()
         if r then
             if r.branch then
                 local s = L.LIVE_BRANCH:format(li, r.branch)
-                local key = "UNIT_" .. tostring(r.unit)
-                if rawget(L, key) then s = s .. L.LIVE_ON:format(L[key]) end
+                local name = ns.Explainer.UnitName(r.unit)
+                if name and not name:find("^UNIT_") then s = s .. L.LIVE_ON:format(name) end
                 parts[#parts + 1] = s
             else
                 parts[#parts + 1] = L.LIVE_NONE:format(li)
@@ -618,10 +631,21 @@ local function createLeft()
     end)
     W.Tooltip(others, L.OTHER_CHARACTERS, L.OTHER_TIP)
 
+    -- Search by name or by macro text ("Heal" finds every macro that casts it)
+    ui.listSearch = W.Edit(f, LEFT_W - 6, 20)
+    ui.listSearch:SetPoint("TOPLEFT", 15, -82)
+    local hint = W.Text(ui.listSearch, "GameFontDisableSmall", L.LIST_SEARCH)
+    hint:SetPoint("LEFT", 2, 0)
+    ui.listSearch:SetScript("OnTextChanged", function(self)
+        hint:SetShown(self:GetText() == "")
+        MF.RefreshList()
+    end)
+    ui.listSearch:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
+
     local panel = W.Panel(f)
-    panel:SetPoint("TOPLEFT", 10, -82)
-    panel:SetSize(LEFT_W, FRAME_H - 82 - 44)
-    ui.listScroll = W.Scroll(panel, LEFT_W, FRAME_H - 82 - 52)
+    panel:SetPoint("TOPLEFT", 10, -106)
+    panel:SetSize(LEFT_W, FRAME_H - 106 - 44)
+    ui.listScroll = W.Scroll(panel, LEFT_W, FRAME_H - 106 - 52)
     ui.listScroll:SetPoint("TOPLEFT", 4, -4)
     ui.listRows = {}
     ui.listEmpty = W.Text(panel, "GameFontDisableSmall", L.EMPTY_LIST)
@@ -750,6 +774,7 @@ local function addLineMenu(owner)
         { text = L.K_USE, value = function() return U.NewCastLine("use") end },
         { text = L.K_EQUIP, value = function() return U.NewCastLine("equip") end },
         { text = L.K_SEQ, value = U.NewSequenceLine },
+        { text = L.K_CASTRANDOM, value = function() local l = U.NewSequenceLine(); l.random = "cast"; return l end },
         { text = L.K_CMD, value = function() return U.NewCommandLine("startattack") end },
         { text = L.K_RAW, value = function() return U.NewRawLine("") end },
     }
@@ -940,6 +965,7 @@ local function createRight()
         { L.K_USE, function() return U.NewCastLine("use") end },
         { L.K_EQUIP, function() return U.NewCastLine("equip") end },
         { L.K_SEQ, U.NewSequenceLine },
+        { L.K_CASTRANDOM, function() local l = U.NewSequenceLine(); l.random = "cast"; return l end },
         { L.K_RAW, function() return U.NewRawLine("") end },
     }
     for _, c in ipairs(U.COMMANDS) do

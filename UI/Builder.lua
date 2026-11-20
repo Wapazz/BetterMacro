@@ -261,9 +261,14 @@ local function chips(ctx, parent, b, x0, y, width, nature)
         local key = def.key
         if b[key] ~= nil then
             add(B.ExtraLabel(key, b[key]), "cond", function(self)
-                local items = {}
-                for _, v in ipairs(def.values) do
+                local items, found = {}, false
+                for _, v in ipairs(B.ExtraValues(def)) do
                     items[#items + 1] = { text = B.ExtraLabel(key, v), value = v, checked = b[key] == v }
+                    if b[key] == v then found = true end
+                end
+                -- A value read from a macro that isn't in our list stays choosable
+                if not found then
+                    table.insert(items, 1, { text = B.ExtraLabel(key, b[key]), value = b[key], checked = true })
                 end
                 W.OpenMenu(self, items, function(v) b[key] = v; ctx.changed() end)
             end, function() b[key] = nil end, true)
@@ -277,7 +282,7 @@ local function chips(ctx, parent, b, x0, y, width, nature)
             for _, def in ipairs(missing) do
                 items[#items + 1] = { text = L["CHK_" .. def.key], value = def }
             end
-            W.OpenMenu(self, items, function(def) b[def.key] = def.values[1]; ctx.changed() end)
+            W.OpenMenu(self, items, function(def) b[def.key] = B.ExtraValues(def)[1]; ctx.changed() end)
         end, nil, true)
         more:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText(L.ADD_COND_TIP, 1, 1, 1, 1, true); GameTooltip:Show()
@@ -287,23 +292,45 @@ local function chips(ctx, parent, b, x0, y, width, nature)
     return y + ROW
 end
 
+-- Values an extra condition can take; a string names a list in the locale.
+function B.ExtraValues(def)
+    if type(def.values) == "string" then return L[def.values] end
+    return def.values
+end
+
 -- Chip text of an extra condition value (see U.EXTRA_CONDS).
 function B.ExtraLabel(key, v)
+    if key == "exists" then return v and L.CH_EXISTS or L.CH_NOEXISTS end
+    if key == "channel" then return v and L.CH_CHANNEL or L.CH_NOCHANNEL end
+    if key == "mounted" then return v and L.CH_MOUNTED or L.CH_NOMOUNTED end
+    if key == "group" then
+        if v == true then return L.CH_GROUP elseif v == false then return L.CH_NOGROUP end
+        return L["CH_GROUP_" .. v]
+    end
+    if key == "equipped" then return L.CH_EQUIPPED:format(v) end
     if key == "nomod" then return v == true and L.CH_NOMOD or L.CH_NOMOD_KEY:format(L["MOD_" .. v]) end
     if key == "noform" then return L.CH_NOT_FORM:format(v) end
     if key == "swim" then return v and L.CH_SWIM or L.CH_NOSWIM end
     if key == "outdoors" then return v and L.CH_OUTDOORS or L.CH_INDOORS end
-    if key == "pet" then return v and L.CH_PET or L.CH_NOPET end
+    if key == "pet" then
+        if v == true then return L.CH_PET elseif v == false then return L.CH_NOPET end
+        return L.CH_PET_NAME:format(v)
+    end
     if key == "button" then return L["CH_BUTTON_" .. v] end
     return tostring(v)
 end
 
+local function unitShort(unit) return ns.Explainer.UnitName(unit, true) end
+
 local function unitMenu(ctx, owner, b)
     local items = {}
+    local listed = false
     for _, u in ipairs(U.UNITS) do
-        local key = u or "target"
-        items[#items + 1] = { text = L["UNITSHORT_" .. key], value = u, checked = (b.unit or false) == u }
+        items[#items + 1] = { text = unitShort(u or nil), value = u, checked = (b.unit or false) == u }
+        if (b.unit or false) == u then listed = true end
     end
+    -- raid3, partypet1...: read from a macro, not offered, but kept selectable
+    if not listed then items[#items + 1] = { text = unitShort(b.unit), value = b.unit, checked = true } end
     W.OpenMenu(owner, items, function(v)
         b.unit = v or nil
         U.ApplyGuards(b, D.Nature(b.action))
@@ -339,7 +366,7 @@ local function drawCast(ctx, card, line, li, W_, live)
         local slotX = 58
         if line.cmd ~= "equip" then
             text(card, L.ON, 58, y, "GameFontDisableSmall")
-            local u = flat(card, L["UNITSHORT_" .. (b.unit or "target")], "plain", 80, y, 90)
+            local u = flat(card, unitShort(b.unit), "plain", 80, y, 90)
             u:SetScript("OnClick", function(self) if not ns.locked then unitMenu(ctx, self, b) end end)
             slotX = 80 + u:GetWidth() + 6
         end
@@ -399,16 +426,17 @@ local function drawSequence(ctx, card, line, li, W_, live)
     highlights[li] = { hl }
 
     text(card, L.SEQ_IF, 8, y)
-    local u = flat(card, L["UNITSHORT_" .. (b.unit or "target")], "plain", 80, y, 90)
+    local u = flat(card, unitShort(b.unit), "plain", 80, y, 90)
     u:SetScript("OnClick", function(self) if not ns.locked then unitMenu(ctx, self, b) end end)
     y = chips(ctx, card, b, 80, y + ROW, W_ - 8, nil)
     hl:SetPoint("TOPLEFT", 2, -28)
     hl:SetPoint("BOTTOMRIGHT", card, "TOPRIGHT", -2, -y + 2)
     hl:SetShown(live and live.branch == 1)
 
+    local stepTab = line.random == "use" and "item" or "spell"
     for k, a in ipairs(line.steps) do
-        text(card, k .. ".", 58, y, "GameFontDisableSmall")
-        actionSlot(ctx, card, a, 80, y, W_ - 120, "spell", function(na)
+        text(card, line.random and "?" or (k .. "."), 58, y, "GameFontDisableSmall")
+        actionSlot(ctx, card, a, 80, y, W_ - 120, stepTab, function(na)
             if na then line.steps[k] = na else table.remove(line.steps, k) end
             ctx.changed()
         end)
@@ -422,11 +450,13 @@ local function drawSequence(ctx, card, line, li, W_, live)
     local add = flat(card, L.ADD_STEP, "ghost", 76, y)
     add:SetScript("OnClick", function(self)
         if ns.locked then return end
-        ctx.openPicker(self, "spell", function(a)
+        ctx.openPicker(self, stepTab, function(a)
             if a then line.steps[#line.steps + 1] = a; ctx.changed() end
         end)
     end)
     y = y + ROW
+    -- A random pick has nothing to reset
+    if line.random then return y + 4 end
 
     -- Reset options
     local r = line.reset
@@ -462,13 +492,19 @@ local function drawSequence(ctx, card, line, li, W_, live)
     return y + ROW + 4
 end
 
-local function drawCommand(ctx, card, line, li, W_)
+local function drawCommand(ctx, card, line, li, W_, live)
     local y = 30
     -- Optional conditions: the command runs only when one of them matches
+    highlights[li] = {}
     for j, b in ipairs(line.conds or {}) do
+        local top = y
+        local hl = pools.hl:Acquire()
+        hl:SetParent(card)
+        hl:SetFrameLevel(card:GetFrameLevel() + 1)
+        highlights[li][j] = hl
         text(card, j == 1 and L.IF_W or L.ELSE_W, 8, y + ROW, "GameFontNormalSmall") -- in front of the conditions
         text(card, L.ON, 58, y, "GameFontDisableSmall")
-        local u = flat(card, L["UNITSHORT_" .. (b.unit or "target")], "plain", 80, y, 90)
+        local u = flat(card, unitShort(b.unit), "plain", 80, y, 90)
         u:SetScript("OnClick", function(self) if not ns.locked then unitMenu(ctx, self, b) end end)
         iconBtn(card, "Interface\\Buttons\\UI-GroupLoot-Pass-Up", W_ - 24, y, L.REMOVE, function()
             if ns.locked then return end
@@ -476,7 +512,11 @@ local function drawCommand(ctx, card, line, li, W_)
             if #line.conds == 0 then line.conds = nil end
             ctx.changed()
         end)
-        y = chips(ctx, card, b, 58, y + ROW, W_ - 8, nil) + 4
+        y = chips(ctx, card, b, 58, y + ROW, W_ - 8, nil)
+        hl:SetPoint("TOPLEFT", 2, -top + 2)
+        hl:SetPoint("BOTTOMRIGHT", card, "TOPRIGHT", -2, -y + 2)
+        hl:SetShown(live and live.branch == j)
+        y = y + 4
     end
     local addCond = flat(card, L.ADD_CMD_COND, "ghost", 54, y)
     addCond:SetScript("OnClick", function()
@@ -549,8 +589,9 @@ local function header(ctx, card, line, li, W_, count)
     if line.kind == "cast" then
         label = (line.cmd == "use" and L.K_USE) or (line.cmd == "equip" and L.K_EQUIP) or L.K_CAST
     elseif line.kind == "command" then label = L["CMDNAME_" .. line.cmd]
+    elseif line.random then label = line.random == "use" and L.K_USERANDOM or L.K_CASTRANDOM
     else label = L[KIND_LABEL[line.kind]] end
-    local h = flat(card, label, (line.kind == "cast" or line.kind == "command") and "plain" or "off", 6, 6)
+    local h = flat(card, label, line.kind == "raw" and "off" or "plain", 6, 6)
     h.label:SetFontObject("GameFontNormalSmall")
     h:SetLabel(label)
     if line.kind == "cast" then
@@ -574,7 +615,20 @@ local function header(ctx, card, line, li, W_, count)
             for _, c in ipairs(U.COMMANDS) do
                 items[#items + 1] = { text = L["CMDNAME_" .. c], value = c, checked = line.cmd == c }
             end
-            W.OpenMenu(self, items, function(v) line.cmd = v; ctx.changed() end)
+            W.OpenMenu(self, items, function(v) line.cmd = v; U.EnsureUnitRow(line); ctx.changed() end)
+        end)
+    elseif line.kind == "sequence" then
+        -- In order (/castsequence), or one at random (/castrandom, /userandom)
+        h:SetScript("OnClick", function(self)
+            if ns.locked then return end
+            W.OpenMenu(self, {
+                { text = L.K_SEQ, value = false, checked = not line.random },
+                { text = L.K_CASTRANDOM, value = "cast", checked = line.random == "cast" },
+                { text = L.K_USERANDOM, value = "use", checked = line.random == "use" },
+            }, function(v)
+                line.random = v or nil
+                ctx.changed()
+            end)
         end)
     end
     local lines = ctx.macro.lines
@@ -616,7 +670,7 @@ function B.Render(content, ctx, width)
         local h
         if line.kind == "cast" then h = drawCast(ctx, card, line, li, width, live)
         elseif line.kind == "sequence" then h = drawSequence(ctx, card, line, li, width, live)
-        elseif line.kind == "command" then h = drawCommand(ctx, card, line, li, width)
+        elseif line.kind == "command" then h = drawCommand(ctx, card, line, li, width, live)
         else h = drawRaw(ctx, card, line, li, width) end
         header(ctx, card, line, li, width, #lines)
         card:SetHeight(h)

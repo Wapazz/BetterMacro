@@ -6,12 +6,14 @@ local U = ns.U
 local P = {}
 ns.Parser = P
 
-local UNITS = { mouseover = true, player = true, focus = true, targettarget = true, pet = true }
 local MODS = { shift = true, alt = true, ctrl = true }
 local SIMPLE = {}
 for _, c in ipairs(U.COMMANDS) do SIMPLE[c] = true end
+local GROUPS = { party = true, raid = true }
 
 local function defaultResolve(name, cmd)
+    local bag, slot = name:match("^(%d+)%s+(%d+)$")
+    if bag then return { kind = "bag", bag = tonumber(bag), slot = tonumber(slot), name = bag .. " " .. slot } end
     local n = tonumber(name)
     if n then return { kind = "slot", id = n, name = tostring(n) } end
     return { kind = (cmd == "use" or cmd == "equip") and "item" or "spell", name = name }
@@ -33,17 +35,45 @@ local function splitMods(word)
 end
 
 local function parseToken(tok, b)
+    -- "equipped:Two-Handed Swords" keeps its spaces and case: it is the client's item type
+    local eq = U.trim(tok):match("^[Ee][Qq][Uu][Ii][Pp][Pp][Ee][Dd]:%s*(.-)%s*$")
+        or U.trim(tok):match("^[Ww][Oo][Rr][Nn]:%s*(.-)%s*$")
+    if eq then
+        if eq == "" or eq:find("[/%[%]]") then return false end -- "a/b" alternatives: raw text
+        b.equipped = eq
+        return true
+    end
+    -- "pet:Voidwalker": a pet name or family, kept as written
+    local pn = U.trim(tok):match("^[Pp][Ee][Tt]:%s*(.-)%s*$")
+    if pn then
+        if pn == "" or pn:find("[/%[%]]") then return false end
+        b.pet = pn
+        return true
+    end
     tok = tok:lower():gsub("%s+", "")
     if tok == "" then return true end
     local unit = tok:match("^@(.+)$") or tok:match("^target=(.+)$")
     if unit then
         if unit == "target" then b.unit = nil return true end
-        if not UNITS[unit] then return false end
+        if unit ~= "player" and not U.IsUnit(unit) then return false end
         b.unit = unit
         return true
     end
     if tok == "help" or tok == "harm" then b.rel = tok return true end
     if tok == "exists" then b._exists = true return true end
+    if tok == "noexists" then b.exists = false return true end
+    if tok == "channeling" then b.channel = true return true end
+    if tok == "nochanneling" then b.channel = false return true end
+    if tok == "mounted" then b.mounted = true return true end
+    if tok == "nomounted" then b.mounted = false return true end
+    if tok == "group" then b.group = true return true end
+    if tok == "nogroup" then b.group = false return true end
+    local grp = tok:match("^group:(%a+)$")
+    if grp then
+        if not GROUPS[grp] then return false end
+        b.group = grp
+        return true
+    end
     if tok == "nodead" then b.life = "alive" return true end
     if tok == "dead" then b.life = "dead" return true end
     -- "mod:alt" ; "mod:alt/ctrl" = any of them ;
@@ -105,8 +135,12 @@ local function parseGroup(content)
     for tok in (content .. ","):gmatch("([^,]*),") do
         if not parseToken(tok, b) then return nil end
     end
-    -- [exists] on the default target can't be expressed with our blocks
-    if b._exists and not b.unit then return nil end
+    -- "exists" on a unit with no enemy/ally check is written back by itself
+    -- (see Generator.CondTokens); anywhere else it is its own condition.
+    if b._exists then
+        if b.exists == false then return nil end -- "exists,noexists"
+        if not b.unit or U.IsSelfUnit(b.unit) then b.exists = true end
+    end
     b._exists = nil
     return b
 end
@@ -138,6 +172,9 @@ local function parseCast(cmd, rest, resolve)
     local line = { kind = "cast", cmd = cmd, branches = {} }
     local clauses = {}
     for clause in (rest .. ";"):gmatch("([^;]*);") do clauses[#clauses + 1] = clause end
+    -- "A; B;": the game ignores the empty last case(s). An empty case in the
+    -- middle does matter (it casts nothing and stops there), so it stays raw.
+    while #clauses > 1 and U.trim(clauses[#clauses]) == "" do clauses[#clauses] = nil end
     local ci = 1
     while ci <= #clauses do
         local groups, actionText = splitClause(clauses[ci])
@@ -164,16 +201,20 @@ local function parseCast(cmd, rest, resolve)
     return line
 end
 
-local function parseSequence(rest, resolve)
+-- stepCmd: "cast" or "use"; random: /castrandom or /userandom (no reset).
+local function parseSequence(rest, resolve, stepCmd, random)
+    stepCmd = stepCmd or "cast"
     local groups, after = splitClause(rest)
     if not groups or #groups > 1 then return nil end
     local line = U.NewSequenceLine()
+    if random then line.random = stepCmd end
     if groups[1] then
         local b = parseGroup(groups[1])
         if not b then return nil end
         line.branch = b
     end
     local reset = after:match("^reset=(%S+)")
+    if reset and random then return nil end
     if reset then
         after = U.trim(after:sub(#reset + 7))
         for rawPart in (reset .. "/"):gmatch("([^/]*)/") do
@@ -185,7 +226,7 @@ local function parseSequence(rest, resolve)
         end
     end
     for rawStep in (after .. ","):gmatch("([^,]*),") do
-        local step = resolveAction(U.trim(rawStep), "cast", resolve)
+        local step = resolveAction(U.trim(rawStep), stepCmd, resolve)
         if not step then return nil end
         line.steps[#line.steps + 1] = step
     end
@@ -203,6 +244,8 @@ function P.ParseLine(text, resolve)
         line = parseCast(cmd, rest, resolve)
     elseif cmd == "castsequence" then
         line = parseSequence(rest, resolve)
+    elseif (cmd == "castrandom" or cmd == "userandom") and not rest:find(";", 1, true) then
+        line = parseSequence(rest, resolve, cmd == "userandom" and "use" or "cast", true)
     elseif SIMPLE[cmd] and not rest:find(";", 1, true) then
         -- "/cmd [a][b] arg": conditions are OR'ed; only /cancelaura takes an argument
         local groups, arg = splitClause(rest)

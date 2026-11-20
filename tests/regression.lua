@@ -130,4 +130,71 @@ assert(U.ToggleMod("alt+ctrl", "alt") == "ctrl" and U.ToggleMod("alt/ctrl", "shi
 local tipped = P.Parse("#showtooltip [mod:shift] Thorns; Mark of the Wild\n/cast Thorns")
 assert(tipped.showtooltip and not tipped.tooltipAction and #tipped.lines == 1)
 
-print("OK: branch order, moved indices, duplicate names, stale identities, holes and conditions")
+-- Commands on a unit: /focus, /target, /assist take the unit from their conditions.
+local fo = P.ParseLine("/focus [nomod:shift,@mouseover,exists][nomod:shift]")
+assert(fo.kind == "command" and fo.cmd == "focus" and #fo.conds == 2 and fo.conds[1].unit == "mouseover")
+assert(G.LineText(fo) == "/focus [@mouseover,exists,nomod:shift][nomod:shift]")
+assert(roundTrip("/clearfocus [mod:shift]") == "/clearfocus [mod:shift]")
+assert(roundTrip("/stopmacro [nocombat]") == "/stopmacro [nocombat]")
+assert(roundTrip("/petstay") == "/petstay")
+assert(P.ParseLine("/target Hogger").kind == "raw") -- a name: kept as text
+-- More units, read back as they were written.
+assert(roundTrip("/cast [@party1,help,nodead] Heal") == "/cast [@party1,help,nodead] Heal")
+assert(roundTrip("/cast [@raid12,help,nodead] Heal") == "/cast [@raid12,help,nodead] Heal")
+assert(roundTrip("/cast [@focustarget,harm] Fireball") == "/cast [@focustarget,harm] Fireball")
+assert(P.ParseLine("/cast [@raid41] Heal").kind == "raw")
+assert(P.ParseLine("/cast [@arena1] Heal").kind == "raw")
+-- More conditions.
+assert(roundTrip("/cast [mounted,group:raid,equipped:Shields] Shield Bash") == "/cast [mounted,group:raid,equipped:Shields] Shield Bash")
+assert(P.ParseLine("/cast [equipped:Two-Handed Swords] Slam").branches[1].equipped == "Two-Handed Swords")
+assert(P.ParseLine("/cast [equipped:Shields/Daggers] Slam").kind == "raw")
+assert(roundTrip("/stopcasting [nochanneling]") == "/stopcasting [nochanneling]")
+assert(roundTrip("/cast [channeling] Mind Flay; Smite") == "/cast [channeling] Mind Flay; Smite")
+assert(roundTrip("/cast [nogroup] Hearthstone") == "/cast [nogroup] Hearthstone")
+assert(roundTrip("/cast [exists] Attack; Auto Shot") == "/cast [exists] Attack; Auto Shot")
+assert(roundTrip("/cast [noexists] Shoot; Fireball") == "/cast [noexists] Shoot; Fireball")
+assert(roundTrip("/cast [@mouseover,noexists] Heal") == "/cast [@mouseover,noexists] Heal")
+assert(P.ParseLine("/cast [exists,noexists] Heal").kind == "raw")
+-- Random lines.
+local rnd = P.ParseLine("/castrandom [combat] Fireball, Frostbolt")
+assert(rnd.kind == "sequence" and rnd.random == "cast" and #rnd.steps == 2)
+assert(G.LineText(rnd) == "/castrandom [combat] Fireball, Frostbolt")
+local urnd = P.ParseLine("/userandom Major Healing Potion, Healthstone")
+assert(urnd.random == "use" and urnd.steps[1].kind == "item")
+assert(G.LineText(urnd) == "/userandom Major Healing Potion, Healthstone")
+assert(P.ParseLine("/castrandom reset=5 A, B").kind == "raw")
+assert(P.ParseLine("/castrandom [combat] A; B").kind == "raw")
+-- A bag slot is an item where it sits, not a name.
+local bag = P.ParseLine("/use 0 1")
+assert(bag.branches[1].action.kind == "bag" and bag.branches[1].action.bag == 0 and bag.branches[1].action.slot == 1)
+assert(G.LineText(bag) == "/use 0 1")
+-- A ";" at the end of the line is ignored, like the game does; an empty case
+-- in the middle is not (it stops the line there).
+assert(roundTrip("/cast [mod:shift] Life Tap(Rank 2); Life Tap;") == "/cast [mod:shift] Life Tap(Rank 2); Life Tap")
+assert(roundTrip("/cast Hellfire; ") == "/cast Hellfire")
+assert(P.ParseLine("/cast [mod:shift] A; ; B").kind == "raw")
+assert(P.ParseLine("/cast ;").kind == "raw")
+-- Pet name or family: "pet:Voidwalker" keeps how it was written.
+local demo = P.ParseLine("/cast  [pet:voidwalker] Sacrifice; [pet:succubus] Soothing Kiss; "
+    .. "[pet:felhunter,mod:alt,@player][pet:felhunter, @mouseover][pet:felhunter] Devour Magic;")
+assert(demo.kind == "cast" and #demo.branches == 5 and demo.branches[1].pet == "voidwalker")
+assert(G.LineText(demo) == "/cast [pet:voidwalker] Sacrifice; [pet:succubus] Soothing Kiss; "
+    .. "[mod:alt,@player,pet:felhunter][@mouseover,exists,pet:felhunter][pet:felhunter] Devour Magic")
+assert(P.ParseLine("/cast [pet:Imp] Firebolt").branches[1].pet == "Imp")
+assert(P.ParseLine("/cast [pet:Imp/Voidwalker] Firebolt").kind == "raw")
+assert(roundTrip("/cast [pet] A; [nopet] B") == "/cast [pet] A; [nopet] B")
+-- @cursor: an area spell placed under the mouse. Like @player, it needs no
+-- enemy/ally or alive check and gets no "exists".
+local rof = P.ParseLine("/cast [@cursor,mod:shift] Rain of Fire(Rank 1); [mod:ctrl] Rain of Fire; [@cursor] Rain of Fire;")
+assert(rof.kind == "cast" and #rof.branches == 3 and rof.branches[3].unit == "cursor")
+assert(G.LineText(rof) == "/cast [mod:shift,@cursor] Rain of Fire(Rank 1); [mod:ctrl][@cursor] Rain of Fire")
+assert(U.IsCatchAll(rof.branches[3]) and not rof.branches[3].rel)
+local cb = U.NewBranch("cursor", { kind = "spell", name = "Blizzard" })
+assert(not cb.rel and not cb.life)
+addon("Core/Explainer.lua")
+local rofMacro = U.NewMacro("RoF")
+rofMacro.lines = { rof }
+local _, rofWarn = ns.Explainer.Explain(rofMacro, {})
+for _, w in ipairs(rofWarn) do assert(not w:find(ns.L.UNIT_cursor, 1, true), w) end
+
+print("OK: branch order, moved indices, duplicate names, stale identities, holes, conditions, units, commands, random lines, trailing \";\", pet names and @cursor")

@@ -39,7 +39,7 @@ end
 --        | { kind = "sequence", branch = branch(conditions only), reset = {...}, steps = { action* } }
 --        | { kind = "command",  cmd = "startattack"|..., action = action|nil }
 --        | { kind = "raw",      text = "..." }
--- branch = { unit = nil|"mouseover"|"player"|"focus"|"targettarget"|"pet",
+-- branch = { unit = nil|"mouseover"|"player"|"cursor"|"focus"|"targettarget"|"pet"|... (U.IsUnit),
 --            rel = nil|"help"|"harm", life = nil|"alive"|"dead",
 --            mod = nil|"shift"|"alt"|"ctrl"|"alt+ctrl" (all held)|"alt/ctrl" (any held),
 --            combat = nil|true|false,
@@ -47,10 +47,15 @@ end
 --            -- extra conditions (U.EXTRA_CONDS), shown only when set:
 --            nomod = nil|true|"shift"|"alt"|"ctrl", noform = nil|number,
 --            swim = nil|true|false, outdoors = nil|true|false (false = indoors),
---            pet = nil|true|false, button = nil|1|2|3 }
+--            pet = nil|true|false|string (pet name or family: "pet:Voidwalker"), button = nil|1|2|3,
+--            exists = nil|true|false (on the branch's unit), channel = nil|true|false,
+--            mounted = nil|true|false, group = nil|true|"party"|"raid"|false (false = solo),
+--            equipped = nil|string (item type, e.g. "Shields") }
 -- A command line can carry conditions too: line.conds = { branch* } (no action), OR'ed.
+-- A sequence line with random = "cast"|"use" is /castrandom or /userandom (no reset).
 -- action = { kind = "spell"|"item"|"slot", name = string, id = number|nil,
 --            noToggle = true|nil -- "!Spell": never turns an active aura/stance off }
+--        | { kind = "bag", bag = number, slot = number, name = "bag slot" } -- /use 0 1
 --        | { kind = "hole", role = U.ROLES[i] }  -- left for the player to fill
 --------------------------------------------------------------------------
 
@@ -97,7 +102,7 @@ end
 -- Safety defaults: any unit other than "my target" / "me" gets an enemy/ally
 -- check and an "alive" check, both visible and removable in the UI.
 function U.ApplyGuards(b, nature)
-    if b.unit and b.unit ~= "player" then
+    if b.unit and not U.IsSelfUnit(b.unit) then
         b.rel = nature or b.rel or "harm"
         b.life = "alive"
     else
@@ -114,16 +119,46 @@ function U.NewSequenceLine()
 end
 
 function U.NewCommandLine(cmd)
-    return { kind = "command", cmd = cmd or "startattack" }
+    local line = { kind = "command", cmd = cmd or "startattack" }
+    U.EnsureUnitRow(line)
+    return line
+end
+
+-- /target, /focus, /assist: start with one empty condition row, so the unit
+-- picker shows (an empty row writes nothing: "/focus" alone = my target).
+function U.EnsureUnitRow(line)
+    if U.UNIT_COMMANDS[line.cmd] and not (line.conds and #line.conds > 0) then line.conds = { {} } end
 end
 
 function U.NewRawLine(text)
     return { kind = "raw", text = text or "" }
 end
 
-U.UNITS = { false, "mouseover", "player", "focus", "targettarget", "pet" } -- false = my target
-U.COMMANDS = { "startattack", "stopattack", "stopcasting", "cleartarget", "targetenemy",
-    "petattack", "petfollow", "petpassive", "dismount", "cancelform", "cancelaura" }
+U.UNITS = { false, "mouseover", "player", "cursor", "focus", "targettarget", "pet",
+    "focustarget", "mouseovertarget", "pettarget", "party1", "party2", "party3", "party4" } -- false = my target
+
+-- "Units" that always exist and need no enemy/ally or alive check:
+-- me, and the ground under the cursor (area spells placed without clicking).
+function U.IsSelfUnit(u)
+    return u == "player" or u == "cursor"
+end
+
+-- Units the parser accepts. raid1-40 and partypet1-4 are read too, but not
+-- offered in the menu (40 entries would drown it).
+function U.IsUnit(u)
+    if not u then return false end
+    for i = 2, #U.UNITS do if U.UNITS[i] == u then return true end end
+    local n = tonumber(u:match("^raid(%d+)$") or u:match("^partypet(%d)$") or "")
+    if u:match("^raid") then return n ~= nil and n >= 1 and n <= 40 end
+    return n ~= nil and n >= 1 and n <= 4
+end
+
+U.COMMANDS = { "startattack", "stopattack", "stopcasting", "stopmacro", "cleartarget", "targetenemy",
+    "targetfriend", "target", "assist", "focus", "clearfocus",
+    "petattack", "petfollow", "petstay", "petpassive", "petdefensive", "petaggressive",
+    "dismount", "cancelform", "cancelaura" }
+-- Commands that act on a unit: the unit comes from the "@unit" of their conditions.
+U.UNIT_COMMANDS = { target = true, assist = true, focus = true }
 U.MODS = { "shift", "alt", "ctrl" }
 
 -- Modifier keys of a branch. b.mod holds one key, or several joined with
@@ -166,13 +201,21 @@ U.EXTRA_CONDS = {
     { key = "outdoors", values = { true, false } },
     { key = "pet", values = { true, false } },
     { key = "button", values = { 2, 1, 3 } },
+    { key = "exists", values = { true, false } },
+    { key = "channel", values = { true, false } },
+    { key = "mounted", values = { true, false } },
+    { key = "group", values = { true, "party", "raid", false } },
+    -- Item types are the client's own words: the menu lists them in its language
+    { key = "equipped", values = "EQUIPPED_TYPES" },
 }
 
 function U.HasConditions(b)
-    return (b.unit and b.unit ~= "player") or b.rel or b.life or b.mod
+    return (b.unit and not U.IsSelfUnit(b.unit)) or b.rel or b.life or b.mod
         or b.combat ~= nil or b.stealth ~= nil or b.form ~= nil
         or b.nomod ~= nil or b.noform ~= nil or b.swim ~= nil
         or b.outdoors ~= nil or b.pet ~= nil or b.button ~= nil
+        or b.exists ~= nil or b.channel ~= nil or b.mounted ~= nil
+        or b.group ~= nil or b.equipped ~= nil
 end
 
 -- A branch that always matches: the ones after it can never be reached.

@@ -345,12 +345,25 @@ function D.Icon(a)
     if a.kind == "slot" then
         return (GetInventoryItemTexture and GetInventoryItemTexture("player", a.id or 0)) or QUESTION
     end
+    if a.kind == "bag" then
+        local info = C_Container and try(C_Container.GetContainerItemInfo, a.bag, a.slot)
+        return (info and info.iconFileID) or QUESTION
+    end
     return QUESTION
+end
+
+-- "Bag 1, slot 3 (Hearthstone)": what sits there right now, if anything.
+function D.BagLabel(a)
+    local base = L.BAG_SLOT:format(a.bag or 0, a.slot or 0)
+    local info = C_Container and try(C_Container.GetContainerItemInfo, a.bag, a.slot)
+    local name = info and (D.ItemName(info.itemID) or (info.hyperlink and info.hyperlink:match("%[(.-)%]")))
+    return name and (base .. " (" .. name .. ")") or base
 end
 
 function D.Label(a)
     if not a then return nil end
     if a.kind == "slot" then return D.SlotName(a.id) end
+    if a.kind == "bag" then return D.BagLabel(a) end
     if a.kind == "hole" then return ns.U.cap(L["ROLE_" .. tostring(a.role)]) end
     return a.name
 end
@@ -393,6 +406,9 @@ end
 function D.Resolve(name, cmd)
     -- /equip only takes item names
     if cmd == "equip" then return { kind = "item", id = D.ItemIdFromName(name), name = name } end
+    -- "/use 0 1": the item in bag 0, slot 1
+    local bag, bagSlot = name:match("^(%d+)%s+(%d+)$")
+    if bag then return { kind = "bag", bag = tonumber(bag), slot = tonumber(bagSlot), name = bag .. " " .. bagSlot } end
     local base, rankText = name:match("^(.-)%s*%(([^()]*)%)$")
     local rank = rankText and (rankText:match("^[Rr]ank%s*(%d+)$") or rankText:match("^[Rr]ang%s*(%d+)$"))
     if rank and base ~= "" then

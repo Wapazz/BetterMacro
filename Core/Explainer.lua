@@ -4,12 +4,23 @@ local U, L = ns.U, ns.L
 local E = {}
 ns.Explainer = E
 
-local function unitName(unit)
-    return L["UNIT_" .. (unit or "target")]
+-- Long (explanations) or short (block buttons) name of a unit.
+-- raid1-40 and partypet1-4 have no key of their own.
+function E.UnitName(unit, short)
+    local prefix = short and "UNITSHORT_" or "UNIT_"
+    unit = unit or "target"
+    local n = unit:match("^raid(%d+)$")
+    if n then return L[prefix .. "RAID"]:format(tonumber(n)) end
+    n = unit:match("^partypet(%d)$")
+    if n then return L[prefix .. "PARTYPET"]:format(tonumber(n)) end
+    return L[prefix .. unit]
 end
+
+local function unitName(unit) return E.UnitName(unit) end
 
 local function actionName(a, opts)
     if a and a.kind == "hole" then return L["ROLE_" .. tostring(a.role)] end
+    if a and a.kind == "bag" then return L.BAG_SLOT:format(a.bag or 0, a.slot or 0) end
     if not a or not a.name or a.name == "" then
         if a and a.kind == "slot" and a.id then return tostring(a.id) end
         return L.MISSING_ACTION
@@ -43,7 +54,9 @@ function E.CondPhrase(b)
         for i, k in ipairs(keys) do names[i] = L["MOD_" .. k] end
         p[#p + 1] = L.C_HOLD:format(U.joinAnd(names, sep == "/" and L.OR or L.AND))
     end
-    if b.rel or b.life or (b.unit and b.unit ~= "player") then
+    if b.exists == false then
+        p[#p + 1] = L.C_NOEXISTS:format(unitName(b.unit))
+    elseif b.rel or b.life or (b.unit and not U.IsSelfUnit(b.unit)) or b.exists then
         local u = unitName(b.unit)
         local f
         if b.rel == "harm" then
@@ -63,8 +76,16 @@ function E.CondPhrase(b)
     elseif b.nomod then p[#p + 1] = L.C_NOMOD_KEY:format(L["MOD_" .. b.nomod]) end
     if b.swim == true then p[#p + 1] = L.C_SWIM elseif b.swim == false then p[#p + 1] = L.C_NOSWIM end
     if b.outdoors == true then p[#p + 1] = L.C_OUTDOORS elseif b.outdoors == false then p[#p + 1] = L.C_INDOORS end
-    if b.pet == true then p[#p + 1] = L.C_PET elseif b.pet == false then p[#p + 1] = L.C_NOPET end
+    if b.pet == true then p[#p + 1] = L.C_PET
+    elseif b.pet == false then p[#p + 1] = L.C_NOPET
+    elseif b.pet then p[#p + 1] = L.C_PET_NAME:format(b.pet) end
     if b.button then p[#p + 1] = L.C_BUTTON:format(L["BUTTON_" .. b.button] or tostring(b.button)) end
+    if b.channel == true then p[#p + 1] = L.C_CHANNEL elseif b.channel == false then p[#p + 1] = L.C_NOCHANNEL end
+    if b.mounted == true then p[#p + 1] = L.C_MOUNTED elseif b.mounted == false then p[#p + 1] = L.C_NOMOUNTED end
+    if b.group == true then p[#p + 1] = L.C_GROUP
+    elseif b.group == false then p[#p + 1] = L.C_NOGROUP
+    elseif b.group then p[#p + 1] = L["C_GROUP_" .. b.group] end
+    if b.equipped then p[#p + 1] = L.C_EQUIPPED:format(b.equipped) end
     return U.joinAnd(p, L.AND)
 end
 
@@ -77,7 +98,7 @@ local function actionPhrase(cmd, b, opts)
     end
     local name = actionName(a, opts)
     -- The unit was already named in the condition: "... cast X on it"
-    local named = b.unit and b.unit ~= "player"
+    local named = b.unit and not U.IsSelfUnit(b.unit)
     if cmd == "equip" then return L.A_EQUIP:format(name) end
     if cmd == "use" then
         if not b.unit then return L.A_USE:format(name) end
@@ -110,7 +131,7 @@ local function explainCast(line, li, opts, items, warnings)
         if not catchAt and U.IsCatchAll(b) then catchAt = j end
 
         local isSpell = b.action and b.action.kind == "spell"
-        if b.unit and b.unit ~= "player" and not unreachable then
+        if b.unit and not U.IsSelfUnit(b.unit) and not unreachable then
             if not b.rel and isSpell then warnings[#warnings + 1] = L.W_NO_REL:format(li, j, unitName(b.unit)) end
             if not b.life then warnings[#warnings + 1] = L.W_NO_LIFE:format(li, j, unitName(b.unit)) end
         end
@@ -143,7 +164,8 @@ local function explainSequence(line, li, opts, items, warnings)
         names[1] = L.MISSING_ACTION
     end
     local b = line.branch or {}
-    local text = L.SEQ:format(table.concat(names, L.SEQ_THEN))
+    local text = line.random and L.RANDOM:format(U.joinAnd(names, L.OR))
+        or L.SEQ:format(table.concat(names, L.SEQ_THEN))
     if U.HasConditions(b) then
         text = L.IF:format(E.CondPhrase(b)) .. text:gsub("^%u", string.lower)
         items[#items + 1] = { kind = "branch", line = li, branch = 1, text = U.cap(text) }
@@ -151,6 +173,7 @@ local function explainSequence(line, li, opts, items, warnings)
     else
         items[#items + 1] = { kind = "branch", line = li, branch = 1, text = text }
     end
+    if line.random then return end
     local r = line.reset or {}
     local why = {}
     if r.seconds and r.seconds > 0 then why[#why + 1] = L.RESET_SECONDS:format(r.seconds) end
@@ -188,6 +211,22 @@ function E.Explain(macro, opts)
         elseif line.kind == "sequence" then
             casts = casts + 1
             explainSequence(line, li, opts, items, warnings)
+        elseif line.kind == "command" and U.UNIT_COMMANDS[line.cmd] then
+            -- /target, /focus, /assist act on the unit of the condition that matches
+            local frag = L["A_" .. line.cmd:upper()]
+            local conds = line.conds
+            if not conds or #conds == 0 then conds = { {} } end
+            local catchAll = false
+            for j, b in ipairs(conds) do
+                local cond = U.HasConditions(b) and E.CondPhrase(b) or ""
+                local prefix
+                if j == 1 then prefix = (cond ~= "") and L.IF:format(cond) or ""
+                else prefix = (cond ~= "") and L.OTHERWISE_IF:format(cond) or L.OTHERWISE end
+                items[#items + 1] = { kind = "branch", line = li, branch = j,
+                    text = U.cap(prefix .. frag:format(unitName(b.unit))) .. "." }
+                if U.IsCatchAll(b) then catchAll = true; break end
+            end
+            if not catchAll then items[#items + 1] = { kind = "note", line = li, text = L.NOTHING } end
         elseif line.kind == "command" then
             local t
             if line.cmd == "cancelaura" then

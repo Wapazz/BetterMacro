@@ -1,5 +1,26 @@
 # BetterMacro
 
+## 1.2.3
+
+### New
+
+- **More commands as blocks:** Target, Assist, Set focus, Clear focus, Target ally, Stop the macro, and pet stay, defensive and aggressive. Target, Assist and Set focus pick their unit like a spell does (`/focus [@mouseover,exists][]`). The "Focus on mouseover" macro of the Common section no longer opens as raw text.
+- **Random spell / Random item** blocks for `/castrandom` and `/userandom`. Click the title of a sequence block to switch between in order and at random.
+- **More conditions** from the "+" chip: the unit exists or not, channeling, mounted, in a group or a raid (or solo), and an item type equipped (`equipped:Shields`).
+- **More units:** your focus's target, your mouseover's target, your pet's target, and party members 1 to 4. Raid members (`@raid12`) and party pets are read from macros too.
+- `/use 0 1` (an item by bag and slot) is now a block that shows what sits in that slot.
+- **Search in the macro list**, by name or by macro text: "Renew" finds every macro that casts it.
+- **Cast at the cursor** (`@cursor`): area spells such as Rain of Fire or Blizzard land under your mouse without the targeting click. Like "me", it needs no enemy/ally check.
+- **Pet by name or family:** `[pet:Voidwalker]` is now read from macros and shown as its own condition.
+
+### Changed
+
+- The live test now also lights up the condition that matches on commands, such as `/stopcasting [mod:shift]`.
+
+### Fixed
+
+- A `;` at the end of a line (`/cast [mod:shift] Life Tap(Rank 2); Life Tap;`) no longer turns the whole line into raw text. The game ignores it, and so does the editor now.
+
 ## 1.2.2
 
 ### New

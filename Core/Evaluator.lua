@@ -13,7 +13,8 @@ function V.Evaluate(macro)
     for li, line in ipairs(macro.lines or {}) do
         local branches
         if line.kind == "cast" then branches = line.branches
-        elseif line.kind == "sequence" then branches = { line.branch or {} } end
+        elseif line.kind == "sequence" then branches = { line.branch or {} }
+        elseif line.kind == "command" and line.conds and #line.conds > 0 then branches = line.conds end
         if branches and #branches > 0 then
             local parts = {}
             for j, b in ipairs(branches) do parts[j] = G.Cond(b) .. " " .. j end
